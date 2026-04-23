@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= typeof title !== 'undefined' ? title + ' — ReHoster' : 'ReHoster' %></title>
+  <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-icon">⚡</span>
+        <span class="brand-name">ReHoster</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/admin/apps" class="nav-item">
+          <span class="nav-icon">📦</span> Apps
+        </a>
+        <a href="/admin/apps/new" class="nav-item">
+          <span class="nav-icon">🚀</span> Deploy New App
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <% if (typeof username !== 'undefined' && username) { %>
+          <span class="sidebar-user">👤 <%= username %></span>
+          <form action="/logout" method="POST" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-ghost">Logout</button>
+          </form>
+        <% } %>
+      </div>
+    </aside>
+    <main class="main-content">

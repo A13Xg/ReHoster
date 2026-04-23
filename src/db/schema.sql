@@ -1,0 +1,36 @@
+CREATE TABLE IF NOT EXISTS admin_users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS apps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  safe_name TEXT UNIQUE NOT NULL,
+  repo_url TEXT NOT NULL,
+  branch TEXT DEFAULT 'main',
+  local_path TEXT,
+  port INTEGER,
+  container_port INTEGER DEFAULT 3000,
+  container_name TEXT,
+  image_name TEXT,
+  build_command TEXT,
+  start_command TEXT,
+  env_vars TEXT,
+  status TEXT DEFAULT 'creating',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  last_deployed_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS app_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  app_id INTEGER,
+  level TEXT DEFAULT 'info',
+  message TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(app_id) REFERENCES apps(id) ON DELETE CASCADE
+);

@@ -1,0 +1,115 @@
+<%- include('../partials/header', {title: title, username: username}) %>
+
+<div class="page-header">
+  <h1 class="page-title">Deploy New App</h1>
+  <a href="/admin/apps" class="btn btn-secondary">← Back to Apps</a>
+</div>
+
+<% if (typeof error !== 'undefined' && error) { %>
+  <div class="alert alert-danger"><%= error %></div>
+<% } %>
+
+<div class="card">
+  <form action="/admin/apps" method="POST" class="app-form" id="deployForm" novalidate>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label" for="name">App Name <span class="required">*</span></label>
+        <input
+          class="form-input"
+          type="text"
+          id="name"
+          name="name"
+          placeholder="my-awesome-app"
+          maxlength="50"
+          required
+          autofocus
+        />
+        <small class="form-hint">Lowercase letters, numbers, hyphens. Used as a unique identifier.</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="repoUrl">GitHub Repository URL <span class="required">*</span></label>
+        <input
+          class="form-input"
+          type="text"
+          id="repoUrl"
+          name="repoUrl"
+          placeholder="https://github.com/username/repo"
+          required
+        />
+        <small class="form-hint">HTTPS or SSH GitHub URL.</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="branch">Branch</label>
+        <input
+          class="form-input"
+          type="text"
+          id="branch"
+          name="branch"
+          placeholder="main"
+          value="main"
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="buildCommand">Build Command</label>
+        <input
+          class="form-input"
+          type="text"
+          id="buildCommand"
+          name="buildCommand"
+          placeholder="npm install && npm run build"
+          value="npm install && npm run build"
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="startCommand">Start Command</label>
+        <input
+          class="form-input"
+          type="text"
+          id="startCommand"
+          name="startCommand"
+          placeholder="npm start"
+          value="npm start"
+        />
+      </div>
+
+      <div class="form-group form-group-full">
+        <label class="form-label" for="envVars">Environment Variables</label>
+        <textarea
+          class="form-input form-textarea"
+          id="envVars"
+          name="envVars"
+          rows="6"
+          placeholder="KEY=value&#10;DATABASE_URL=postgres://...&#10;NODE_ENV=production"
+        ></textarea>
+        <small class="form-hint">One KEY=VALUE per line. Lines starting with # are ignored.</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="port">Host Port (optional)</label>
+        <input
+          class="form-input"
+          type="number"
+          id="port"
+          name="port"
+          placeholder="Auto-assigned"
+          min="4000"
+          max="4999"
+        />
+        <small class="form-hint">Leave blank to auto-assign a port from the available range.</small>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary btn-lg" id="deployBtn">
+        🚀 Deploy App
+      </button>
+      <a href="/admin/apps" class="btn btn-secondary btn-lg">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<%- include('../partials/footer') %>

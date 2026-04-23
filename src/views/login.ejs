@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — ReHoster</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="login-body">
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-brand">
+        <span class="brand-icon">⚡</span>
+        <span class="brand-name">ReHoster</span>
+      </div>
+      <h2 class="login-title">Sign In</h2>
+      <% if (typeof error !== 'undefined' && error) { %>
+        <div class="alert alert-danger"><%= error %></div>
+      <% } %>
+      <form action="/login" method="POST" class="login-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="username">Username</label>
+          <input
+            class="form-input"
+            type="text"
+            id="username"
+            name="username"
+            autocomplete="username"
+            required
+            autofocus
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <input
+            class="form-input"
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

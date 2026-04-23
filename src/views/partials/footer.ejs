@@ -1,0 +1,22 @@
+    </main>
+  </div>
+  <script src="/js/admin.js"></script>
+  <script>
+    // Inject CSRF token into all forms that don't already have it
+    document.addEventListener('DOMContentLoaded', function() {
+      var token = document.querySelector('meta[name="csrf-token"]');
+      if (!token) return;
+      var csrfValue = token.getAttribute('content');
+      document.querySelectorAll('form').forEach(function(form) {
+        if (!form.querySelector('input[name="_csrf"]')) {
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = '_csrf';
+          input.value = csrfValue;
+          form.appendChild(input);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+node_modules/
+.env
+data/*.sqlite
+logs/*.log
+managed-apps/*/
+!managed-apps/.gitkeep
+dist/
+.DS_Store

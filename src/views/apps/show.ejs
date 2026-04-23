@@ -1,0 +1,128 @@
+<%- include('../partials/header', {title: title, username: username}) %>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title"><%= app.name %></h1>
+    <small class="text-muted">/<%= app.safe_name %></small>
+  </div>
+  <a href="/admin/apps" class="btn btn-secondary">← Back to Apps</a>
+</div>
+
+<div class="detail-grid">
+  <div class="card detail-card">
+    <div class="card-header">
+      <h2>App Details</h2>
+      <%- include('../partials/status-badge', {status: app.status}) %>
+    </div>
+    <div class="detail-list">
+      <div class="detail-row">
+        <span class="detail-label">Status</span>
+        <span class="detail-value"><%- include('../partials/status-badge', {status: app.status}) %></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Host Port</span>
+        <span class="detail-value"><code><%= app.port %></code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">URL</span>
+        <span class="detail-value">
+          <a href="<%= baseHost %>:<%= app.port %>" target="_blank" rel="noopener noreferrer">
+            <%= baseHost %>:<%= app.port %>
+          </a>
+        </span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Container</span>
+        <span class="detail-value"><code><%= app.container_name %></code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Image</span>
+        <span class="detail-value"><code><%= app.image_name %></code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Repository</span>
+        <span class="detail-value">
+          <a href="<%= app.repo_url %>" target="_blank" rel="noopener noreferrer"><%= app.repo_url %></a>
+        </span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Branch</span>
+        <span class="detail-value"><code><%= app.branch %></code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Build Command</span>
+        <span class="detail-value"><code><%= app.build_command || '—' %></code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Start Command</span>
+        <span class="detail-value"><code><%= app.start_command || '—' %></code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Created</span>
+        <span class="detail-value"><%= new Date(app.created_at).toLocaleString() %></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Last Deployed</span>
+        <span class="detail-value"><%= app.last_deployed_at ? new Date(app.last_deployed_at).toLocaleString() : '—' %></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card actions-card">
+    <div class="card-header"><h2>Actions</h2></div>
+    <div class="actions-list">
+      <% if (app.status === 'stopped' || app.status === 'failed') { %>
+        <form action="/admin/apps/<%= app.id %>/start" method="POST">
+          <button type="submit" class="btn btn-success btn-block">▶ Start</button>
+        </form>
+      <% } %>
+      <% if (app.status === 'running') { %>
+        <form action="/admin/apps/<%= app.id %>/stop" method="POST">
+          <button type="submit" class="btn btn-warning btn-block">⏹ Stop</button>
+        </form>
+        <form action="/admin/apps/<%= app.id %>/restart" method="POST">
+          <button type="submit" class="btn btn-secondary btn-block">↺ Restart</button>
+        </form>
+      <% } %>
+      <form action="/admin/apps/<%= app.id %>/rebuild" method="POST">
+        <button type="submit" class="btn btn-info btn-block confirm-action" data-confirm="Rebuild '<%= app.name %>'? This will stop and re-deploy it.">
+          🔨 Rebuild
+        </button>
+      </form>
+      <form action="/admin/apps/<%= app.id %>/pull" method="POST">
+        <button type="submit" class="btn btn-info btn-block confirm-action" data-confirm="Pull latest and redeploy '<%= app.name %>'?">
+          ⬇ Pull & Redeploy
+        </button>
+      </form>
+      <a href="/admin/apps/<%= app.id %>/logs" class="btn btn-secondary btn-block">📋 View Logs</a>
+      <hr class="divider" />
+      <form action="/admin/apps/<%= app.id %>/delete" method="POST">
+        <button type="submit" class="btn btn-danger btn-block confirm-action" data-confirm="Permanently delete '<%= app.name %>'? This cannot be undone.">
+          🗑 Delete App
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 1.5rem;">
+  <div class="card-header">
+    <h2>Recent Deployment Logs</h2>
+    <a href="/admin/apps/<%= app.id %>/logs" class="btn btn-sm btn-secondary">View All Logs</a>
+  </div>
+  <% if (!logs || logs.length === 0) { %>
+    <div class="empty-state"><p>No deployment logs yet.</p></div>
+  <% } else { %>
+    <div class="log-viewer">
+      <% logs.forEach(function(log) { %>
+        <div class="log-line log-<%= log.level %>">
+          <span class="log-time"><%= new Date(log.created_at).toLocaleTimeString() %></span>
+          <span class="log-level">[<%= log.level.toUpperCase() %>]</span>
+          <span class="log-msg"><%= log.message %></span>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+</div>
+
+<%- include('../partials/footer') %>
