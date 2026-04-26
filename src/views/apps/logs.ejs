@@ -1,0 +1,74 @@
+<%- include('../partials/header', {title: title, username: username}) %>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Logs — <%= app.name %></h1>
+    <%- include('../partials/status-badge', {status: app.status}) %>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-secondary" id="autoRefreshBtn" onclick="toggleAutoRefresh()">⟳ Auto-Refresh: OFF</button>
+    <button class="btn btn-secondary" onclick="location.reload()">↺ Refresh Now</button>
+    <a href="/admin/apps/<%= app.id %>" class="btn btn-secondary">← Back to App</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Deployment Logs</h2>
+    <span class="text-muted"><%= dbLogs ? dbLogs.length : 0 %> entries</span>
+  </div>
+  <% if (!dbLogs || dbLogs.length === 0) { %>
+    <div class="empty-state"><p>No deployment logs yet.</p></div>
+  <% } else { %>
+    <div class="log-viewer" id="deployLogs">
+      <% dbLogs.forEach(function(log) { %>
+        <div class="log-line log-<%= log.level %>">
+          <span class="log-time"><%= new Date(log.created_at).toLocaleString() %></span>
+          <span class="log-level">[<%= log.level.toUpperCase() %>]</span>
+          <span class="log-msg"><%= log.message %></span>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+</div>
+
+<div class="card" style="margin-top: 1.5rem;">
+  <div class="card-header">
+    <h2>Container Runtime Logs</h2>
+    <small class="text-muted">Last 200 lines from <code><%= app.container_name %></code></small>
+  </div>
+  <% if (!dockerLogs || dockerLogs.trim().length === 0) { %>
+    <div class="empty-state"><p>No container logs available. Container may not be running.</p></div>
+  <% } else { %>
+    <div class="log-viewer log-viewer-docker" id="dockerLogs">
+      <% dockerLogs.split('\n').forEach(function(line) { %>
+        <% if (line.trim()) { %>
+          <div class="log-line"><span class="log-msg"><%= line %></span></div>
+        <% } %>
+      <% }) %>
+    </div>
+  <% } %>
+</div>
+
+<script>
+  var autoRefreshInterval = null;
+  function toggleAutoRefresh() {
+    var btn = document.getElementById('autoRefreshBtn');
+    if (autoRefreshInterval) {
+      clearInterval(autoRefreshInterval);
+      autoRefreshInterval = null;
+      btn.textContent = '⟳ Auto-Refresh: OFF';
+      btn.classList.remove('btn-active');
+    } else {
+      autoRefreshInterval = setInterval(function() { location.reload(); }, 5000);
+      btn.textContent = '⟳ Auto-Refresh: ON (5s)';
+      btn.classList.add('btn-active');
+    }
+  }
+  // Scroll log viewers to bottom
+  document.querySelectorAll('.log-viewer').forEach(function(el) {
+    el.scrollTop = el.scrollHeight;
+  });
+</script>
+
+<%- include('../partials/footer') %>

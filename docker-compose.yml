@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  hosting-panel:
+    build: .
+    container_name: rehoster-panel
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # NOTE: Mounting the Docker socket grants the container Docker daemon access.
+      # Use Docker's rootless mode or a socket proxy (e.g. tecnativa/docker-socket-proxy)
+      # in hardened production environments.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - ./managed-apps:/app/managed-apps
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    environment:
+      - NODE_ENV=production
+    networks:
+      - rehoster-net
+
+networks:
+  rehoster-net:
+    driver: bridge

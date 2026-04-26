@@ -1,0 +1,68 @@
+<%- include('../partials/header', {title: title, username: username}) %>
+
+<div class="page-header">
+  <h1 class="page-title">Dashboard</h1>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-value"><%= stats.total %></div>
+    <div class="stat-label">Total Apps</div>
+  </div>
+  <div class="stat-card stat-card-running">
+    <div class="stat-value"><%= stats.running %></div>
+    <div class="stat-label">Running</div>
+  </div>
+  <div class="stat-card stat-card-stopped">
+    <div class="stat-value"><%= stats.stopped %></div>
+    <div class="stat-label">Stopped</div>
+  </div>
+  <div class="stat-card stat-card-failed">
+    <div class="stat-value"><%= stats.failed %></div>
+    <div class="stat-label">Failed</div>
+  </div>
+  <div class="stat-card stat-card-building">
+    <div class="stat-value"><%= stats.building %></div>
+    <div class="stat-label">Building</div>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 2rem;">
+  <div class="card-header">
+    <h2>Recent Apps</h2>
+    <a href="/admin/apps/new" class="btn btn-primary btn-sm">+ Deploy New App</a>
+  </div>
+  <% if (apps.length === 0) { %>
+    <div class="empty-state">
+      <p>No apps deployed yet.</p>
+      <a href="/admin/apps/new" class="btn btn-primary">Deploy Your First App</a>
+    </div>
+  <% } else { %>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Port</th>
+          <th>Last Deployed</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% apps.slice(0, 10).forEach(function(app) { %>
+          <tr>
+            <td><strong><%= app.name %></strong></td>
+            <td><%- include('../partials/status-badge', {status: app.status}) %></td>
+            <td><code><%= app.port %></code></td>
+            <td><%= app.last_deployed_at ? new Date(app.last_deployed_at).toLocaleString() : '—' %></td>
+            <td>
+              <a href="/admin/apps/<%= app.id %>" class="btn btn-sm btn-secondary">View</a>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</div>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,82 @@
+<%- include('../partials/header', {title: title, username: username}) %>
+
+<div class="page-header">
+  <h1 class="page-title">Apps</h1>
+  <a href="/admin/apps/new" class="btn btn-primary">+ Deploy New App</a>
+</div>
+
+<div class="stats-row">
+  <span class="stat-pill">Total: <strong><%= stats.total %></strong></span>
+  <span class="stat-pill running">Running: <strong><%= stats.running %></strong></span>
+  <span class="stat-pill stopped">Stopped: <strong><%= stats.stopped %></strong></span>
+  <span class="stat-pill failed">Failed: <strong><%= stats.failed %></strong></span>
+</div>
+
+<div class="card">
+  <% if (apps.length === 0) { %>
+    <div class="empty-state">
+      <p>No apps deployed yet.</p>
+      <a href="/admin/apps/new" class="btn btn-primary">Deploy Your First App</a>
+    </div>
+  <% } else { %>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Repo</th>
+          <th>Branch</th>
+          <th>Port</th>
+          <th>Status</th>
+          <th>Last Deployed</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% apps.forEach(function(app) { %>
+          <tr data-app-id="<%= app.id %>">
+            <td>
+              <strong><a href="/admin/apps/<%= app.id %>" class="app-link"><%= app.name %></a></strong>
+              <br/><small class="text-muted"><%= app.safe_name %></small>
+            </td>
+            <td>
+              <a href="<%= app.repo_url %>" target="_blank" rel="noopener noreferrer" class="text-muted repo-link">
+                <%= app.repo_url.replace('https://github.com/', '').replace('git@github.com:', '') %>
+              </a>
+            </td>
+            <td><code><%= app.branch %></code></td>
+            <td><code><%= app.port %></code></td>
+            <td><%- include('../partials/status-badge', {status: app.status}) %></td>
+            <td class="text-muted">
+              <%= app.last_deployed_at ? new Date(app.last_deployed_at).toLocaleString() : '—' %>
+            </td>
+            <td class="actions-cell">
+              <a href="/admin/apps/<%= app.id %>" class="btn btn-sm btn-secondary">View</a>
+              <% if (app.status === 'stopped' || app.status === 'failed') { %>
+                <form action="/admin/apps/<%= app.id %>/start" method="POST" class="inline-form">
+                  <button type="submit" class="btn btn-sm btn-success">Start</button>
+                </form>
+              <% } %>
+              <% if (app.status === 'running') { %>
+                <form action="/admin/apps/<%= app.id %>/stop" method="POST" class="inline-form">
+                  <button type="submit" class="btn btn-sm btn-warning">Stop</button>
+                </form>
+                <form action="/admin/apps/<%= app.id %>/restart" method="POST" class="inline-form">
+                  <button type="submit" class="btn btn-sm btn-secondary">Restart</button>
+                </form>
+              <% } %>
+              <form action="/admin/apps/<%= app.id %>/rebuild" method="POST" class="inline-form">
+                <button type="submit" class="btn btn-sm btn-info confirm-action" data-confirm="Rebuild app '<%= app.name %>'? This will stop and re-deploy it.">Rebuild</button>
+              </form>
+              <a href="/admin/apps/<%= app.id %>/logs" class="btn btn-sm btn-secondary">Logs</a>
+              <form action="/admin/apps/<%= app.id %>/delete" method="POST" class="inline-form">
+                <button type="submit" class="btn btn-sm btn-danger confirm-action" data-confirm="Delete app '<%= app.name %>'? This cannot be undone.">Delete</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</div>
+
+<%- include('../partials/footer') %>
