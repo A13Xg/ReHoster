@@ -9,6 +9,7 @@ const portService = require('./portService');
 const gitService = require('./gitService');
 const dockerService = require('./dockerService');
 const logService = require('./logService');
+const frameworkDetectService = require('./frameworkDetectService');
 
 function getAllApps() {
   return db.prepare("SELECT * FROM apps WHERE status != 'deleted' ORDER BY created_at DESC").all();
@@ -55,26 +56,33 @@ async function createApp(data) {
     envVarsJson = JSON.stringify(parsed);
   }
 
+  const description = data.description ? String(data.description).trim().slice(0, 500) : null;
+  const groupId = data.group_id ? parseInt(data.group_id, 10) || null : null;
+  const publicHostname = data.public_hostname ? String(data.public_hostname).trim().slice(0, 500) : null;
+  const serviceType = data.service_type ? String(data.service_type).trim() : 'auto';
+  const tags = data.tags ? String(data.tags).trim().slice(0, 500) : null;
+  const cpuLimit = data.cpu_limit ? String(data.cpu_limit).trim() : null;
+  const memoryLimit = data.memory_limit ? String(data.memory_limit).trim() : null;
+  const webhookUrl = data.webhook_url ? String(data.webhook_url).trim().slice(0, 500) : null;
+  const restartSchedule = data.restart_schedule ? String(data.restart_schedule).trim().slice(0, 200) : null;
+
   const result = db
     .prepare(
       `INSERT INTO apps
         (name, safe_name, repo_url, branch, local_path, port, container_port,
-         container_name, image_name, build_command, start_command, env_vars, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating')`
+         container_name, image_name, build_command, start_command, env_vars, status,
+         description, group_id, public_hostname, service_type, tags, cpu_limit,
+         memory_limit, webhook_url, restart_schedule)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
-      name,
-      safeName,
-      String(data.repoUrl).trim(),
-      branch,
-      localPath,
-      port,
-      containerPort,
-      containerName,
-      imageName,
+      name, safeName, String(data.repoUrl).trim(), branch, localPath, port, containerPort,
+      containerName, imageName,
       data.buildCommand || 'npm install && npm run build',
       data.startCommand || 'npm start',
-      envVarsJson
+      envVarsJson,
+      description, groupId, publicHostname, serviceType, tags, cpuLimit,
+      memoryLimit, webhookUrl, restartSchedule
     );
 
   return db.prepare('SELECT * FROM apps WHERE id = ?').get(result.lastInsertRowid);
@@ -84,9 +92,7 @@ async function deployApp(appId) {
   const app = getApp(appId);
   if (!app) throw new Error(`App ${appId} not found`);
 
-  const log = (level, msg) => {
-    logService.addLog(appId, level, msg);
-  };
+  const log = (level, msg) => logService.addLog(appId, level, msg);
 
   try {
     updateStatus(appId, 'cloning');
@@ -101,9 +107,15 @@ async function deployApp(appId) {
     await gitService.cloneRepo(app.repo_url, app.branch, app.local_path);
     log('info', 'Repository cloned successfully');
 
+    // Detect frameworks
+    const frameworks = frameworkDetectService.detectFrameworks(app.local_path);
+    const detectedFrameworksJson = JSON.stringify(frameworks);
+    db.prepare('UPDATE apps SET detected_frameworks = ? WHERE id = ?').run(detectedFrameworksJson, appId);
+    log('info', `Detected frameworks: ${frameworks.map((f) => f.label).join(', ')}`);
+
     updateStatus(appId, 'building');
     log('info', 'Generating Dockerfile if not present');
-    await dockerService.generateDockerfile(app.local_path);
+    await dockerService.generateDockerfile(app.local_path, app.service_type, detectedFrameworksJson);
 
     log('info', `Building Docker image: ${app.image_name}`);
     const buildResult = await dockerService.buildImage(app.local_path, app.image_name);
@@ -127,6 +139,8 @@ async function deployApp(appId) {
       containerPort: app.container_port,
       envVars,
       restartPolicy: config.dockerRestartPolicy,
+      cpuLimit: app.cpu_limit || null,
+      memoryLimit: app.memory_limit || null,
     });
 
     db.prepare(
@@ -145,7 +159,7 @@ async function startApp(id) {
   if (!app) throw new Error(`App ${id} not found`);
   await dockerService.startContainer(app.container_name);
   updateStatus(id, 'running');
-  logService.addLog(id, 'info', `App started`);
+  logService.addLog(id, 'info', 'App started');
 }
 
 async function stopApp(id) {
@@ -153,7 +167,7 @@ async function stopApp(id) {
   if (!app) throw new Error(`App ${id} not found`);
   await dockerService.stopContainer(app.container_name);
   updateStatus(id, 'stopped');
-  logService.addLog(id, 'info', `App stopped`);
+  logService.addLog(id, 'info', 'App stopped');
 }
 
 async function restartApp(id) {
@@ -161,7 +175,7 @@ async function restartApp(id) {
   if (!app) throw new Error(`App ${id} not found`);
   await dockerService.restartContainer(app.container_name);
   updateStatus(id, 'running');
-  logService.addLog(id, 'info', `App restarted`);
+  logService.addLog(id, 'info', 'App restarted');
 }
 
 async function rebuildApp(id) {
@@ -219,6 +233,10 @@ async function getAppLogs(id) {
   return { dbLogs, dockerLogs };
 }
 
+function getAllGroups() {
+  return db.prepare('SELECT * FROM groups ORDER BY name ASC').all();
+}
+
 module.exports = {
   getAllApps,
   getApp,
@@ -231,4 +249,5 @@ module.exports = {
   pullAndRedeploy,
   deleteApp,
   getAppLogs,
+  getAllGroups,
 };

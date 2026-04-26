@@ -1,0 +1,36 @@
+<%- include('partials/header', {title: title}) %>
+
+<div class="page-header">
+  <h1 class="page-title">🔄 Upgrade</h1>
+</div>
+
+<div class="card" style="max-width:600px;">
+  <div class="card-header"><h2>Panel Version</h2></div>
+  <div class="detail-list">
+    <div class="detail-row">
+      <span class="detail-label">Current Version</span>
+      <span class="detail-value"><code><%= currentVersion %></code></span>
+    </div>
+  </div>
+
+  <% if (checkResult) { %>
+    <div class="alert <%= checkResult.hasUpdates ? 'alert-warning' : 'alert-success' %>" style="margin:1rem 0;">
+      <%= checkResult.message %>
+    </div>
+  <% } %>
+
+  <div class="actions-list" style="padding:1rem;">
+    <form action="/admin/upgrade/check" method="POST" style="margin-bottom:0.5rem;">
+      <button type="submit" class="btn btn-secondary btn-block">🔍 Check for Updates</button>
+    </form>
+    <form action="/admin/upgrade/apply" method="POST">
+      <button type="submit" class="btn btn-primary btn-block confirm-action" data-confirm="Apply upgrade? The server will need to be restarted after.">⬆ Apply Upgrade (git pull)</button>
+    </form>
+  </div>
+
+  <div style="padding:0 1rem 1rem;color:var(--text-muted);font-size:0.85rem;">
+    <p>Upgrade pulls the latest changes from the git repository and installs updated dependencies. A manual server restart may be required.</p>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

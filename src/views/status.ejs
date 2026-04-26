@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>System Status — ReHoster</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+<div style="max-width:900px;margin:2rem auto;padding:0 1rem;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:700;">💚 System Status</h1>
+      <small class="text-muted">ReHoster v<%= panelVersion %> &bull; Uptime: <%= Math.floor(uptime/3600) %>h <%= Math.floor((uptime%3600)/60) %>m</small>
+    </div>
+    <a href="/status.json" class="btn btn-secondary btn-sm">JSON</a>
+  </div>
+
+  <div class="stats-row" style="margin-bottom:1.5rem;">
+    <span class="stat-pill <%= dbOk ? 'running' : 'failed' %>">DB: <%= dbOk ? '✅ Online' : '❌ Offline' %></span>
+    <span class="stat-pill running">Apps: <%= apps.length %></span>
+    <span class="stat-pill running">Running: <%= apps.filter(a => a.status === 'running').length %></span>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Applications</h2></div>
+    <% if (apps.length === 0) { %>
+      <div class="empty-state"><p>No apps deployed.</p></div>
+    <% } else { %>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Health</th>
+            <th>Port</th>
+            <th>Last Health Check</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% apps.forEach(function(app) { %>
+            <tr>
+              <td><strong><%= app.name %></strong><br/><small class="text-muted"><%= app.safe_name %></small></td>
+              <td><span class="badge badge-<%= app.status %>"><%= app.status %></span></td>
+              <td>
+                <% if (app.health_status === 'healthy') { %><span class="health-dot health-healthy"></span> Healthy
+                <% } else if (app.health_status === 'unhealthy') { %><span class="health-dot health-unhealthy"></span> Unhealthy
+                <% } else { %><span class="health-dot health-unknown"></span> Unknown<% } %>
+              </td>
+              <td><code><%= app.port %></code></td>
+              <td class="text-muted"><%= app.last_health_check ? new Date(app.last_health_check).toLocaleString() : '—' %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+
+  <p class="text-muted" style="margin-top:1rem;text-align:center;font-size:0.8rem;">Updated: <%= timestamp %></p>
+</div>
+</body>
+</html>

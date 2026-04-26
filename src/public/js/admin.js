@@ -1,114 +1,357 @@
-'use strict';
+/* ── ReHoster admin.js ── */
 
-// Confirm dialogs for destructive actions
-document.addEventListener('DOMContentLoaded', function () {
-  document.querySelectorAll('.confirm-action').forEach(function (btn) {
-    btn.addEventListener('click', function (e) {
-      var message = btn.getAttribute('data-confirm') || 'Are you sure?';
-      if (!confirm(message)) {
-        e.preventDefault();
-        return false;
-      }
-    });
-  });
+// ── Status polling ──
+const STATUS_INTERVAL = 8000;
+const LOG_INTERVAL = 2500;
+const COUNTER_DURATION = 1000;
 
-  // Highlight active nav item
-  var path = window.location.pathname;
-  document.querySelectorAll('.nav-item').forEach(function (link) {
-    var href = link.getAttribute('href');
-    if (href && path.startsWith(href) && href !== '/') {
-      link.classList.add('active');
-    }
-  });
-});
+function initStatusPolling() {
+  const cells = document.querySelectorAll('[data-app-id]');
+  if (!cells.length) return;
 
-// Status polling: periodically refresh status badges on app listing/detail pages
-(function () {
-  var refreshInterval = null;
-
-  function updateStatusBadges() {
-    var cells = document.querySelectorAll('[data-app-id]');
-    if (cells.length === 0) return;
-
-    cells.forEach(function (row) {
-      var appId = row.getAttribute('data-app-id');
-      if (!appId) return;
-      fetch('/admin/apps/' + appId + '/status', { credentials: 'same-origin' })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-          if (!data) return;
-          var badge = row.querySelector('.badge');
-          if (badge) {
-            badge.className = 'badge badge-' + data.status;
+  const poll = () => {
+    cells.forEach(cell => {
+      const id = cell.dataset.appId;
+      fetch(`/admin/apps/${id}/status`)
+        .then(r => r.json())
+        .then(data => {
+          const badge = cell.querySelector('.badge');
+          if (badge && data.status) {
             badge.textContent = data.status;
+            badge.className = `badge badge-${data.status}`;
+            const isPulse = data.status === 'running';
+            const isShake = data.status === 'failed';
+            badge.classList.toggle('badge-pulse', isPulse);
+            badge.classList.toggle('badge-shake', isShake);
           }
+          const portEl = cell.querySelector('.port-display');
+          if (portEl && data.port) portEl.textContent = `:${data.port}`;
         })
-        .catch(function () {});
+        .catch(() => {});
     });
+  };
+
+  setInterval(poll, STATUS_INTERVAL);
+}
+
+// ── Theme toggle ──
+function initTheme() {
+  const stored = localStorage.getItem('theme') || 'dark';
+  if (stored === 'light') document.documentElement.classList.add('light-theme');
+
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    const isLight = document.documentElement.classList.toggle('light-theme');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    btn.textContent = isLight ? '🌙' : '☀️';
+
+    fetch('/admin/settings/set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ theme: isLight ? 'light' : 'dark' })
+    }).catch(() => {});
+  });
+
+  const isLight = document.documentElement.classList.contains('light-theme');
+  btn.textContent = isLight ? '🌙' : '☀️';
+}
+
+// ── Terminal panel ──
+let terminalExpanded = false;
+
+function toggleTerminal() {
+  terminalExpanded = !terminalExpanded;
+  const panel = document.getElementById('terminalPanel');
+  const btn = document.getElementById('terminalToggle');
+  if (!panel) return;
+  panel.classList.toggle('expanded', terminalExpanded);
+  if (btn) btn.textContent = terminalExpanded ? '▼ collapse' : '▲ expand';
+}
+
+// ── Log feed ──
+let lastLogId = 0;
+
+function appendLog(entry) {
+  const out = document.getElementById('terminalOutput');
+  if (!out) return;
+
+  const placeholder = out.querySelector('.terminal-placeholder');
+  if (placeholder) placeholder.remove();
+
+  const line = document.createElement('div');
+  line.className = `terminal-line level-${entry.level || 'info'}`;
+
+  const t = document.createElement('span');
+  t.className = 'terminal-line-time';
+  t.textContent = entry.created_at ? entry.created_at.substring(11, 19) : '';
+
+  const src = document.createElement('span');
+  src.className = 'terminal-line-source';
+  src.textContent = `[${(entry.source || 'system').substring(0, 10)}]`;
+
+  const msg = document.createElement('span');
+  msg.className = 'terminal-line-msg';
+  msg.textContent = entry.message || '';
+
+  line.append(t, src, msg);
+  out.appendChild(line);
+
+  // auto scroll
+  if (out.scrollTop + out.clientHeight >= out.scrollHeight - 40) {
+    out.scrollTop = out.scrollHeight;
   }
 
-  // Only auto-poll if there are apps in a transitional state
-  var transitionalBadges = document.querySelectorAll(
-    '.badge-cloning, .badge-building, .badge-creating'
-  );
-  if (transitionalBadges.length > 0) {
-    refreshInterval = setInterval(function () {
-      updateStatusBadges();
-      // Stop polling if no more transitional states
-      var remaining = document.querySelectorAll(
-        '.badge-cloning, .badge-building, .badge-creating'
-      );
-      if (remaining.length === 0) {
-        clearInterval(refreshInterval);
-        refreshInterval = null;
-      }
-    }, 3000);
-  }
-})();
+  // cap at 200 lines
+  while (out.children.length > 200) out.removeChild(out.firstChild);
+}
 
-// Form submit guard: disable button to prevent double-submit
-document.addEventListener('DOMContentLoaded', function () {
-  var deployForm = document.getElementById('deployForm');
-  if (deployForm) {
-    deployForm.addEventListener('submit', function () {
-      var btn = document.getElementById('deployBtn');
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = '⏳ Deploying…';
+function initLogFeed() {
+  const out = document.getElementById('terminalOutput');
+  if (!out) return;
+
+  const poll = () => {
+    fetch(`/api/system-logs?since=${lastLogId}&limit=30`)
+      .then(r => r.json())
+      .then(data => {
+        const entries = Array.isArray(data) ? data : (data.logs || []);
+        if (!entries.length) return;
+        entries.forEach(entry => {
+          if (entry.id > lastLogId) lastLogId = entry.id;
+          appendLog(entry);
+        });
+      })
+      .catch(() => {});
+  };
+
+  // fetch initial
+  poll();
+  setInterval(poll, LOG_INTERVAL);
+}
+
+// ── Copy to clipboard ──
+function initCopyButtons() {
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copy || btn.closest('[data-copy]')?.dataset.copy || '';
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+      } catch (e) {
+        // fallback
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
       }
     });
-  }
-});
+  });
+}
 
-// Client-side form validation for new app form
-document.addEventListener('DOMContentLoaded', function () {
-  var nameInput = document.getElementById('name');
-  var repoInput = document.getElementById('repoUrl');
-
-  if (nameInput) {
-    nameInput.addEventListener('blur', function () {
-      var val = nameInput.value.trim();
-      if (val.length < 1) {
-        nameInput.setCustomValidity('App name is required');
-      } else if (val.length > 50) {
-        nameInput.setCustomValidity('App name must be 50 characters or fewer');
+// ── Env vault toggle ──
+function initEnvVault() {
+  document.querySelectorAll('.env-val').forEach(el => {
+    el.addEventListener('click', () => {
+      const isShown = el.dataset.shown === '1';
+      if (isShown) {
+        el.textContent = '••••••••';
+        el.dataset.shown = '0';
       } else {
-        nameInput.setCustomValidity('');
+        el.textContent = el.dataset.value || '••••••••';
+        el.dataset.shown = '1';
       }
+    });
+  });
+}
+
+// ── Bulk actions ──
+function initBulkActions() {
+  const selectAll = document.getElementById('selectAll');
+  const bulkBar = document.getElementById('bulkActions');
+  const countEl = document.getElementById('bulkCount');
+
+  function updateBar() {
+    const checked = document.querySelectorAll('.app-checkbox:checked');
+    if (bulkBar) {
+      bulkBar.style.display = checked.length ? 'flex' : 'none';
+    }
+    if (countEl) countEl.textContent = checked.length;
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      document.querySelectorAll('.app-checkbox').forEach(cb => {
+        cb.checked = selectAll.checked;
+      });
+      updateBar();
     });
   }
 
-  if (repoInput) {
-    repoInput.addEventListener('blur', function () {
-      var val = repoInput.value.trim();
-      var valid = val.startsWith('https://github.com/') || val.startsWith('git@github.com:');
-      if (!val) {
-        repoInput.setCustomValidity('Repository URL is required');
-      } else if (!valid) {
-        repoInput.setCustomValidity('Must be a valid GitHub HTTPS (https://github.com/...) or SSH (git@github.com:...) URL');
-      } else {
-        repoInput.setCustomValidity('');
-      }
-    });
-  }
+  document.querySelectorAll('.app-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateBar);
+  });
+}
+
+function bulkAction(action) {
+  const checked = [...document.querySelectorAll('.app-checkbox:checked')];
+  if (!checked.length) return;
+
+  const confirm_map = { delete: 'Delete selected apps permanently?' };
+  if (confirm_map[action] && !confirm(confirm_map[action])) return;
+
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+  let done = 0;
+
+  checked.forEach(cb => {
+    const id = cb.value;
+    fetch(`/admin/apps/${id}/bulk-action`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'CSRF-Token': csrf
+      },
+      body: JSON.stringify({ action })
+    })
+      .then(() => { done++; if (done === checked.length) location.reload(); })
+      .catch(() => { done++; if (done === checked.length) location.reload(); });
+  });
+}
+
+// ── Counter animation ──
+function animateCounters() {
+  document.querySelectorAll('.stat-counter').forEach(el => {
+    const target = parseInt(el.textContent, 10);
+    if (isNaN(target)) return;
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(elapsed / COUNTER_DURATION, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.round(eased * target);
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+// ── Keyboard shortcuts ──
+let kbState = '';
+let kbTimer = null;
+
+function initKeyboardShortcuts() {
+  document.addEventListener('keydown', e => {
+    const tag = document.activeElement.tagName.toLowerCase();
+    if (['input', 'textarea', 'select'].includes(tag)) return;
+
+    if (e.key === '?') {
+      showShortcutsModal();
+      return;
+    }
+
+    kbState += e.key;
+    clearTimeout(kbTimer);
+
+    const shortcuts = {
+      'ga': '/admin/apps',
+      'gs': '/admin/settings',
+      'gn': '/admin/apps/new',
+      'gm': '/admin/metrics',
+      'gl': '/admin/analytics',
+      'gS': '/status',
+    };
+
+    if (shortcuts[kbState]) {
+      location.href = shortcuts[kbState];
+      kbState = '';
+      return;
+    }
+
+    kbTimer = setTimeout(() => { kbState = ''; }, 800);
+  });
+}
+
+function showShortcutsModal() {
+  const existing = document.getElementById('shortcutsModal');
+  if (existing) { existing.remove(); return; }
+
+  const modal = document.createElement('div');
+  modal.id = 'shortcutsModal';
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-overlay" onclick="document.getElementById('shortcutsModal').remove()"></div>
+    <div class="modal-content" style="max-width:420px">
+      <div class="modal-header">
+        <h3>⌨ Keyboard Shortcuts</h3>
+        <button class="modal-close" onclick="document.getElementById('shortcutsModal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <table style="width:100%;border-collapse:collapse">
+          ${[
+            ['g a', 'Go to Apps'],
+            ['g s', 'Go to Settings'],
+            ['g n', 'New Deployment'],
+            ['g m', 'Metrics'],
+            ['g l', 'Analytics'],
+            ['g S', 'Status page'],
+            ['?', 'Show shortcuts'],
+          ].map(([k, d]) => `
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:0.5rem 0.75rem"><kbd>${k}</kbd></td>
+              <td style="padding:0.5rem 0.75rem;color:var(--text-secondary)">${d}</td>
+            </tr>`).join('')}
+        </table>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+// ── Tooltips (title attribute) ──
+function initTooltips() {
+  // Browser native title tooltips work by default; this enhances .tooltip-icon elements
+  document.querySelectorAll('.tooltip-icon[title]').forEach(el => {
+    el.setAttribute('tabindex', '0');
+  });
+}
+
+// ── Flash auto-dismiss ──
+function initFlash() {
+  document.querySelectorAll('.alert').forEach(alert => {
+    setTimeout(() => {
+      alert.style.transition = 'opacity 0.5s ease';
+      alert.style.opacity = '0';
+      setTimeout(() => alert.remove(), 500);
+    }, 4000);
+  });
+}
+
+// ── Confirm delete ──
+function confirmDelete(msg) {
+  return confirm(msg || 'Are you sure you want to delete this?');
+}
+
+// ── DOMContentLoaded ──
+document.addEventListener('DOMContentLoaded', () => {
+  initStatusPolling();
+  initTheme();
+  initLogFeed();
+  initCopyButtons();
+  initEnvVault();
+  initBulkActions();
+  initKeyboardShortcuts();
+  initTooltips();
+  initFlash();
+  animateCounters();
+
+  // terminal toggle button
+  const termBtn = document.getElementById('terminalToggle');
+  if (termBtn) termBtn.addEventListener('click', toggleTerminal);
 });

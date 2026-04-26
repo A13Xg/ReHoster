@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="<%= typeof theme !== 'undefined' && theme === 'light' ? 'light-theme' : '' %>">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><%= typeof title !== 'undefined' ? title + ' — ReHoster' : 'ReHoster' %></title>
+  <title><%= typeof title !== 'undefined' ? title + ' — ' + (typeof panelName !== 'undefined' ? panelName : 'ReHoster') : (typeof panelName !== 'undefined' ? panelName : 'ReHoster') %></title>
   <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
@@ -12,22 +12,45 @@
     <aside class="sidebar">
       <div class="sidebar-brand">
         <span class="brand-icon">⚡</span>
-        <span class="brand-name">ReHoster</span>
+        <span class="brand-name"><%= typeof panelName !== 'undefined' ? panelName : 'ReHoster' %></span>
       </div>
       <nav class="sidebar-nav">
-        <a href="/admin/apps" class="nav-item">
+        <a href="/admin/apps" class="nav-item" style="--nav-delay:0.05s">
           <span class="nav-icon">📦</span> Apps
         </a>
-        <a href="/admin/apps/new" class="nav-item">
-          <span class="nav-icon">🚀</span> Deploy New App
+        <a href="/admin/apps/new" class="nav-item" style="--nav-delay:0.1s">
+          <span class="nav-icon">🚀</span> Deploy New
+        </a>
+        <a href="/admin/groups" class="nav-item" style="--nav-delay:0.15s">
+          <span class="nav-icon">🗂️</span> Groups
+        </a>
+        <a href="/status" class="nav-item" style="--nav-delay:0.2s">
+          <span class="nav-icon">💚</span> Status
+        </a>
+        <a href="/admin/metrics" class="nav-item" style="--nav-delay:0.25s">
+          <span class="nav-icon">📊</span> Metrics
+        </a>
+        <a href="/admin/analytics" class="nav-item" style="--nav-delay:0.3s">
+          <span class="nav-icon">📈</span> Analytics
+        </a>
+        <a href="/admin/settings" class="nav-item" style="--nav-delay:0.35s">
+          <span class="nav-icon">⚙️</span> Settings
+        </a>
+        <a href="/admin/upgrade" class="nav-item" style="--nav-delay:0.4s">
+          <span class="nav-icon">🔄</span> Upgrade
         </a>
       </nav>
       <div class="sidebar-footer">
         <% if (typeof username !== 'undefined' && username) { %>
           <span class="sidebar-user">👤 <%= username %></span>
+          <a href="/admin/change-password" class="btn btn-sm btn-ghost" style="margin-bottom:4px;">🔑 Change Password</a>
           <form action="/logout" method="POST" style="display:inline;">
+            <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
             <button type="submit" class="btn btn-sm btn-ghost">Logout</button>
           </form>
+        <% } %>
+        <% if (typeof panelVersion !== 'undefined') { %>
+          <span class="sidebar-version">v<%= panelVersion %></span>
         <% } %>
       </div>
     </aside>

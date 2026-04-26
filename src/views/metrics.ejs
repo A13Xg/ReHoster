@@ -1,0 +1,68 @@
+<%- include('partials/header', {title: title}) %>
+
+<div class="page-header">
+  <h1 class="page-title">📊 System Metrics</h1>
+  <a href="/metrics.json" class="btn btn-secondary btn-sm" target="_blank">JSON</a>
+</div>
+
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><h2>System — Last 60 Data Points</h2></div>
+  <% if (!systemMetrics || systemMetrics.length === 0) { %>
+    <div class="empty-state"><p>No metrics collected yet. Metrics are collected every 60 seconds.</p></div>
+  <% } else { %>
+    <div class="metrics-latest">
+      <% var latest = systemMetrics[0]; %>
+      <div class="metric-card">
+        <div class="metric-label">CPU</div>
+        <div class="metric-value"><%= latest.cpu_percent %>%</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Memory</div>
+        <div class="metric-value"><%= latest.mem_used_mb %> / <%= latest.mem_total_mb %> MB</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Disk</div>
+        <div class="metric-value"><%= latest.disk_used_gb %> / <%= latest.disk_total_gb %> GB</div>
+      </div>
+    </div>
+    <div class="metrics-table-wrap">
+      <table class="table" style="margin-top:1rem;">
+        <thead>
+          <tr><th>Time</th><th>CPU %</th><th>Mem Used</th><th>Mem Total</th><th>Disk Used</th><th>Disk Total</th></tr>
+        </thead>
+        <tbody>
+          <% systemMetrics.slice(0,20).forEach(function(m) { %>
+            <tr>
+              <td class="text-muted"><%= new Date(m.timestamp).toLocaleString() %></td>
+              <td><%= m.cpu_percent %>%</td>
+              <td><%= m.mem_used_mb %> MB</td>
+              <td><%= m.mem_total_mb %> MB</td>
+              <td><%= m.disk_used_gb %> GB</td>
+              <td><%= m.disk_total_gb %> GB</td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<% if (appMetrics && appMetrics.length > 0) { %>
+<div class="card">
+  <div class="card-header"><h2>Per-App Metrics (last hour avg)</h2></div>
+  <table class="table">
+    <thead><tr><th>App ID</th><th>Avg CPU %</th><th>Avg Mem (MB)</th></tr></thead>
+    <tbody>
+      <% appMetrics.forEach(function(m) { %>
+        <tr>
+          <td><a href="/admin/apps/<%= m.app_id %>"><%= m.app_id %></a></td>
+          <td><%= Math.round(m.avg_cpu) %>%</td>
+          <td><%= Math.round(m.avg_mem) %> MB</td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+
+<%- include('partials/footer') %>

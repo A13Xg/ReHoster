@@ -15,6 +15,7 @@ router.get('/admin', (req, res) => {
 router.get('/admin/apps', (req, res, next) => {
   try {
     const apps = appService.getAllApps();
+    const groups = appService.getAllGroups();
     const stats = {
       total: apps.length,
       running: apps.filter((a) => a.status === 'running').length,
@@ -22,11 +23,22 @@ router.get('/admin/apps', (req, res, next) => {
       failed: apps.filter((a) => a.status === 'failed').length,
       building: apps.filter((a) => ['building', 'cloning'].includes(a.status)).length,
     };
+
+    // Attach group info and parse frameworks for each app
+    const groupMap = {};
+    for (const g of groups) groupMap[g.id] = g;
+
+    const appsWithMeta = apps.map((app) => {
+      let frameworks = [];
+      try { frameworks = app.detected_frameworks ? JSON.parse(app.detected_frameworks) : []; } catch {}
+      return { ...app, frameworks, group: groupMap[app.group_id] || null };
+    });
+
     res.render('apps/index', {
       title: 'Apps',
-      apps,
+      apps: appsWithMeta,
+      groups,
       stats,
-      username: req.session.username,
     });
   } catch (err) {
     next(err);

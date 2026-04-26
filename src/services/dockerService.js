@@ -5,23 +5,42 @@ const path = require('path');
 const { runCommand } = require('../utils/shell');
 const config = require('../config/env');
 
-const DEFAULT_DOCKERFILE = `FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --omit=dev
-COPY . .
-RUN npm run build || true
-ENV PORT=3000
-EXPOSE 3000
-CMD ["npm", "start"]
-`;
-
 const DEFAULT_DOCKERIGNORE = `node_modules
 .git
 .env
+.env.*
 .DS_Store
 npm-debug.log
 `;
+
+function buildNodeDockerfile(containerPort) {
+  return `FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --chown=node:node package*.json ./
+RUN npm install
+COPY --chown=node:node . .
+RUN npm run build || true
+
+FROM node:20-alpine AS production
+WORKDIR /app
+COPY --chown=node:node package*.json ./
+RUN npm install --omit=dev
+COPY --chown=node:node --from=builder /app .
+ENV NODE_ENV=production
+ENV PORT=${containerPort}
+EXPOSE ${containerPort}
+USER node
+CMD ["npm", "start"]
+`;
+}
+
+function buildStaticDockerfile() {
+  return `FROM nginx:alpine
+COPY . /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+`;
+}
 
 async function isDockerAvailable() {
   const result = await runCommand('docker', ['info'], { timeout: 10000 });
@@ -39,11 +58,19 @@ async function buildImage(appPath, imageName) {
   return result;
 }
 
-async function runContainer({ imageName, containerName, hostPort, containerPort, envVars, restartPolicy }) {
+async function runContainer({ imageName, containerName, hostPort, containerPort, envVars, restartPolicy, cpuLimit, memoryLimit }) {
   const args = ['run', '-d', '--name', containerName, '-p', `${hostPort}:${containerPort}`];
 
   if (restartPolicy) {
     args.push('--restart', restartPolicy);
+  }
+
+  if (cpuLimit) {
+    args.push('--cpus', String(cpuLimit));
+  }
+
+  if (memoryLimit) {
+    args.push('--memory', String(memoryLimit));
   }
 
   if (envVars && typeof envVars === 'object') {
@@ -112,15 +139,29 @@ async function getContainerStatus(containerName) {
   return state || 'unknown';
 }
 
-async function generateDockerfile(appPath) {
+async function generateDockerfile(appPath, serviceType, detectedFrameworks) {
   const dockerfilePath = path.join(appPath, 'Dockerfile');
   const dockerignorePath = path.join(appPath, '.dockerignore');
 
-  if (!fs.existsSync(dockerfilePath)) {
-    fs.writeFileSync(dockerfilePath, DEFAULT_DOCKERFILE, 'utf8');
-  }
   if (!fs.existsSync(dockerignorePath)) {
     fs.writeFileSync(dockerignorePath, DEFAULT_DOCKERIGNORE, 'utf8');
+  }
+
+  if (!fs.existsSync(dockerfilePath)) {
+    let frameworks = [];
+    try {
+      if (detectedFrameworks) {
+        frameworks = typeof detectedFrameworks === 'string'
+          ? JSON.parse(detectedFrameworks)
+          : detectedFrameworks;
+      }
+    } catch {}
+
+    const isStatic = serviceType === 'static' || (frameworks.length > 0 && frameworks.every((f) => f.key === 'static'));
+    const containerPort = config.defaultContainerPort;
+
+    const content = isStatic ? buildStaticDockerfile() : buildNodeDockerfile(containerPort);
+    fs.writeFileSync(dockerfilePath, content, 'utf8');
   }
 }
 

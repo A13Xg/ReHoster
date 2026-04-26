@@ -1,0 +1,125 @@
+<%- include('../partials/header', {title: title}) %>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">📁 Files — <%= app.name %></h1>
+    <% if (currentRelPath) { %>
+      <small class="text-muted">/<%= currentRelPath %></small>
+    <% } %>
+  </div>
+  <a href="/admin/apps/<%= app.id %>" class="btn btn-secondary">← Back to App</a>
+</div>
+
+<div class="card">
+  <!-- Breadcrumbs -->
+  <div class="file-breadcrumbs">
+    <a href="/admin/apps/<%= app.id %>/files" class="breadcrumb-link">📁 root</a>
+    <% if (currentRelPath) {
+      var parts = currentRelPath.split('/');
+      var cumPath = '';
+      parts.forEach(function(part, i) {
+        cumPath = cumPath ? cumPath + '/' + part : part;
+        var isLast = i === parts.length - 1;
+    %>
+      <span class="breadcrumb-sep">/</span>
+      <% if (isLast) { %>
+        <span class="breadcrumb-current"><%= part %></span>
+      <% } else { %>
+        <a href="/admin/apps/<%= app.id %>/files?path=<%= encodeURIComponent(cumPath) %>" class="breadcrumb-link"><%= part %></a>
+      <% } %>
+    <% }); } %>
+  </div>
+
+  <% if (!entries || entries.length === 0) { %>
+    <div class="empty-state"><p>Directory is empty or app has not been deployed yet.</p></div>
+  <% } else { %>
+    <table class="table">
+      <thead>
+        <tr><th>Name</th><th>Type</th><th>Size</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        <% if (currentRelPath) { %>
+          <% var parentPath = currentRelPath.includes('/') ? currentRelPath.split('/').slice(0,-1).join('/') : ''; %>
+          <tr>
+            <td><a href="/admin/apps/<%= app.id %>/files<%= parentPath ? '?path=' + encodeURIComponent(parentPath) : '' %>">📂 ..</a></td>
+            <td class="text-muted">directory</td><td>—</td><td>—</td>
+          </tr>
+        <% } %>
+        <% entries.forEach(function(entry) { %>
+          <tr>
+            <td>
+              <% if (entry.isDir) { %>
+                <a href="/admin/apps/<%= app.id %>/files?path=<%= encodeURIComponent(entry.relPath) %>">📂 <%= entry.name %></a>
+              <% } else { %>
+                <span class="file-entry" onclick="viewFile('<%= encodeURIComponent(entry.relPath) %>', '<%= app.id %>')">📄 <%= entry.name %></span>
+              <% } %>
+            </td>
+            <td class="text-muted"><%= entry.isDir ? 'directory' : 'file' %></td>
+            <td class="text-muted"><%= entry.isDir ? '—' : (entry.size > 1024 ? Math.round(entry.size/1024) + ' KB' : entry.size + ' B') %></td>
+            <td>
+              <% if (!entry.isDir) { %>
+                <button class="btn btn-sm btn-secondary" onclick="viewFile('<%= encodeURIComponent(entry.relPath) %>', '<%= app.id %>')">View/Edit</button>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</div>
+
+<!-- File editor modal -->
+<div id="fileModal" class="modal" style="display:none;">
+  <div class="modal-overlay" onclick="closeFileModal()"></div>
+  <div class="modal-content modal-lg">
+    <div class="modal-header">
+      <h3 id="fileModalTitle">File</h3>
+      <button class="modal-close" onclick="closeFileModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <textarea id="fileContent" class="form-input form-textarea" style="font-family:monospace;min-height:400px;font-size:0.85rem;" spellcheck="false"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="saveFile()">💾 Save</button>
+      <button class="btn btn-secondary" onclick="closeFileModal()">Cancel</button>
+      <span id="saveStatus" class="text-muted" style="margin-left:1rem;"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+var currentFilePath = null;
+var currentAppId = null;
+function viewFile(encodedPath, appId) {
+  currentFilePath = decodeURIComponent(encodedPath);
+  currentAppId = appId;
+  document.getElementById('fileModalTitle').textContent = currentFilePath;
+  document.getElementById('fileContent').value = 'Loading…';
+  document.getElementById('fileModal').style.display = 'flex';
+  fetch('/admin/apps/' + appId + '/files/view?path=' + encodedPath, {credentials:'same-origin'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) { document.getElementById('fileContent').value = d.content || ''; })
+    .catch(function() { document.getElementById('fileContent').value = 'Error loading file.'; });
+}
+function closeFileModal() {
+  document.getElementById('fileModal').style.display = 'none';
+  currentFilePath = null;
+}
+function saveFile() {
+  if (!currentFilePath || !currentAppId) return;
+  var content = document.getElementById('fileContent').value;
+  var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+  document.getElementById('saveStatus').textContent = 'Saving…';
+  fetch('/admin/apps/' + currentAppId + '/files/save', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+    body: JSON.stringify({ path: currentFilePath, content: content })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) { document.getElementById('saveStatus').textContent = d.ok ? '✅ Saved' : '❌ Error'; })
+  .catch(function() { document.getElementById('saveStatus').textContent = '❌ Error'; });
+}
+</script>
+
+<%- include('../partials/footer') %>

@@ -1,0 +1,97 @@
+<%- include('partials/header', {title: title}) %>
+
+<div class="page-header">
+  <h1 class="page-title">⚙️ Settings</h1>
+  <div class="header-actions">
+    <a href="/admin/settings/export" class="btn btn-secondary">⬇ Export</a>
+    <a href="/admin/maintenance-preview" class="btn btn-secondary" target="_blank">👁 Maintenance Preview</a>
+  </div>
+</div>
+
+<% if (typeof saved !== 'undefined' && saved) { %>
+  <div class="alert alert-success">Settings saved successfully.</div>
+<% } %>
+
+<form action="/admin/settings" method="POST">
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header"><h2>Panel</h2></div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Panel Name</label>
+        <input class="form-input" type="text" name="panel_name" value="<%= settings.panel_name || 'ReHoster' %>" maxlength="50" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Theme</label>
+        <select class="form-input" name="theme">
+          <option value="dark" <%= (settings.theme || 'dark') === 'dark' ? 'selected' : '' %>>Dark</option>
+          <option value="light" <%= settings.theme === 'light' ? 'selected' : '' %>>Light</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header"><h2>Docker</h2></div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Restart Policy</label>
+        <select class="form-input" name="docker_restart_policy">
+          <option value="unless-stopped" <%= settings.docker_restart_policy === 'unless-stopped' ? 'selected' : '' %>>unless-stopped</option>
+          <option value="always" <%= settings.docker_restart_policy === 'always' ? 'selected' : '' %>>always</option>
+          <option value="on-failure" <%= settings.docker_restart_policy === 'on-failure' ? 'selected' : '' %>>on-failure</option>
+          <option value="no" <%= settings.docker_restart_policy === 'no' ? 'selected' : '' %>>no</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Port Range Start</label>
+        <input class="form-input" type="number" name="port_range_start" value="<%= settings.port_range_start || '4000' %>" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Port Range End</label>
+        <input class="form-input" type="number" name="port_range_end" value="<%= settings.port_range_end || '4999' %>" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header"><h2>Retention</h2></div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Log Retention (days)</label>
+        <input class="form-input" type="number" name="log_retention_days" value="<%= settings.log_retention_days || '30' %>" min="1" max="365" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Analytics Retention (days)</label>
+        <input class="form-input" type="number" name="analytics_retention_days" value="<%= settings.analytics_retention_days || '7' %>" min="1" max="90" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header"><h2>Maintenance Page</h2></div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Title</label>
+        <input class="form-input" type="text" name="maintenance_title" value="<%= settings.maintenance_title || 'Under Maintenance' %>" maxlength="100" />
+      </div>
+      <div class="form-group form-group-full">
+        <label class="form-label">Message</label>
+        <textarea class="form-input form-textarea" name="maintenance_message" rows="3" maxlength="500"><%= settings.maintenance_message || '' %></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Background Color</label>
+        <input class="form-input" type="color" name="maintenance_bg_color" value="<%= settings.maintenance_bg_color || '#1a1d27' %>" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Text Color</label>
+        <input class="form-input" type="color" name="maintenance_text_color" value="<%= settings.maintenance_text_color || '#e4e6f0' %>" />
+      </div>
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary btn-lg">💾 Save Settings</button>
+  </div>
+</form>
+
+<%- include('partials/footer') %>

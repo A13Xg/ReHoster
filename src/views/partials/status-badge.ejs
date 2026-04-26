@@ -1,1 +1,1 @@
-<span class="badge badge-<%= status %>"><%= status %></span>
+<span class="badge badge-<%= status %><% if (status === 'running') { %> badge-pulse<% } %><% if (status === 'failed') { %> badge-shake<% } %>"><%= status %></span>
