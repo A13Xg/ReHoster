@@ -1,0 +1,103 @@
+<%- include('partials/header', {title: title}) %>
+
+<div class="page-header">
+  <h1 class="page-title">📈 Analytics</h1>
+  <small class="text-muted">Last 24 hours</small>
+  <a href="/analytics.json" class="btn btn-secondary btn-sm" target="_blank">JSON</a>
+</div>
+
+<div class="stats-row" style="margin-bottom:1.5rem;">
+  <span class="stat-pill">Total Requests: <strong><%= total %></strong></span>
+  <span class="stat-pill">Avg Response: <strong><%= avgResponseMs %>ms</strong></span>
+</div>
+
+<div class="detail-grid">
+  <div class="card">
+    <div class="card-header"><h2>Top Paths</h2></div>
+    <% if (!byPath || byPath.length === 0) { %>
+      <div class="empty-state"><p>No data yet.</p></div>
+    <% } else { %>
+      <table class="table">
+        <thead><tr><th>Path</th><th>Requests</th></tr></thead>
+        <tbody>
+          <% byPath.forEach(function(r) { %>
+            <tr><td><code><%= r.path %></code></td><td><%= r.count %></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>By Status Code</h2></div>
+    <% if (!byStatus || byStatus.length === 0) { %>
+      <div class="empty-state"><p>No data yet.</p></div>
+    <% } else { %>
+      <table class="table">
+        <thead><tr><th>Status</th><th>Count</th></tr></thead>
+        <tbody>
+          <% byStatus.forEach(function(r) { %>
+            <tr>
+              <td><span class="badge badge-<%= r.status_code < 300 ? 'running' : r.status_code < 500 ? 'building' : 'failed' %>"><%= r.status_code %></span></td>
+              <td><%= r.count %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>By Method</h2></div>
+    <% if (!byMethod || byMethod.length === 0) { %>
+      <div class="empty-state"><p>No data yet.</p></div>
+    <% } else { %>
+      <table class="table">
+        <thead><tr><th>Method</th><th>Count</th></tr></thead>
+        <tbody>
+          <% byMethod.forEach(function(r) { %>
+            <tr><td><code><%= r.method %></code></td><td><%= r.count %></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>By Client Type</h2></div>
+    <% if (!byUaType || byUaType.length === 0) { %>
+      <div class="empty-state"><p>No data yet.</p></div>
+    <% } else { %>
+      <table class="table">
+        <thead><tr><th>Type</th><th>Count</th></tr></thead>
+        <tbody>
+          <% byUaType.forEach(function(r) { %>
+            <tr><td><%= r.user_agent_type %></td><td><%= r.count %></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1.5rem;">
+  <div class="card-header"><h2>Hourly Traffic</h2></div>
+  <% if (!hourly || hourly.length === 0) { %>
+    <div class="empty-state"><p>No hourly data yet.</p></div>
+  <% } else { %>
+    <div class="hourly-chart">
+      <% var maxCount = Math.max.apply(null, hourly.map(function(h) { return h.count; })); %>
+      <% for (var h = 0; h < 24; h++) { %>
+        <% var hr = hourly.find(function(x) { return parseInt(x.hour) === h; }); %>
+        <% var cnt = hr ? hr.count : 0; %>
+        <% var pct = maxCount > 0 ? Math.round((cnt / maxCount) * 100) : 0; %>
+        <div class="hourly-bar" title="<%= h %>:00 — <%= cnt %> requests">
+          <div class="hourly-bar-fill" style="height:<%= pct %>%"></div>
+          <div class="hourly-bar-label"><%= h %></div>
+        </div>
+      <% } %>
+    </div>
+  <% } %>
+</div>
+
+<%- include('partials/footer') %>

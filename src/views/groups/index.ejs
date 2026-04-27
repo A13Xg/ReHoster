@@ -1,0 +1,61 @@
+<%- include('../partials/header', {title: title}) %>
+
+<div class="page-header">
+  <h1 class="page-title">🗂️ Groups</h1>
+</div>
+
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><h2>Create Group</h2></div>
+  <form action="/admin/groups" method="POST" class="app-form">
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Name <span class="required">*</span></label>
+        <input class="form-input" type="text" name="name" placeholder="Production" maxlength="100" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input class="form-input" type="text" name="description" placeholder="Optional description" maxlength="500" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <input class="form-input" type="color" name="color" value="#6366f1" />
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">+ Create Group</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>All Groups</h2></div>
+  <% if (!groups || groups.length === 0) { %>
+    <div class="empty-state"><p>No groups yet.</p></div>
+  <% } else { %>
+    <table class="table">
+      <thead>
+        <tr><th>Name</th><th>Description</th><th>Apps</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        <% groups.forEach(function(g) { %>
+          <tr>
+            <td>
+              <span class="group-dot" style="background:<%= g.color %>"></span>
+              <strong><%= g.name %></strong>
+            </td>
+            <td class="text-muted"><%= g.description || '—' %></td>
+            <td><%= g.app_count %></td>
+            <td class="actions-cell">
+              <a href="/admin/groups/<%= g.id %>/edit" class="btn btn-sm btn-secondary">Edit</a>
+              <form action="/admin/groups/<%= g.id %>/delete" method="POST" class="inline-form">
+                <button type="submit" class="btn btn-sm btn-danger confirm-action" data-confirm="Delete group '<%= g.name %>'? Apps will be ungrouped.">Delete</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</div>
+
+<%- include('../partials/footer') %>

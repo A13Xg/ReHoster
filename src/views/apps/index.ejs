@@ -1,4 +1,4 @@
-<%- include('../partials/header', {title: title, username: username}) %>
+<%- include('../partials/header', {title: title}) %>
 
 <div class="page-header">
   <h1 class="page-title">Apps</h1>
@@ -6,10 +6,10 @@
 </div>
 
 <div class="stats-row">
-  <span class="stat-pill">Total: <strong><%= stats.total %></strong></span>
-  <span class="stat-pill running">Running: <strong><%= stats.running %></strong></span>
-  <span class="stat-pill stopped">Stopped: <strong><%= stats.stopped %></strong></span>
-  <span class="stat-pill failed">Failed: <strong><%= stats.failed %></strong></span>
+  <span class="stat-pill stat-counter">Total: <strong><%= stats.total %></strong></span>
+  <span class="stat-pill running stat-counter">Running: <strong><%= stats.running %></strong></span>
+  <span class="stat-pill stopped stat-counter">Stopped: <strong><%= stats.stopped %></strong></span>
+  <span class="stat-pill failed stat-counter">Failed: <strong><%= stats.failed %></strong></span>
 </div>
 
 <div class="card">
@@ -22,11 +22,13 @@
     <table class="table">
       <thead>
         <tr>
+          <th><input type="checkbox" id="selectAll" title="Select all" /></th>
           <th>Name</th>
           <th>Repo</th>
           <th>Branch</th>
           <th>Port</th>
           <th>Status</th>
+          <th>Health</th>
           <th>Last Deployed</th>
           <th>Actions</th>
         </tr>
@@ -34,9 +36,27 @@
       <tbody>
         <% apps.forEach(function(app) { %>
           <tr data-app-id="<%= app.id %>">
+            <td><input type="checkbox" class="app-checkbox" value="<%= app.id %>" /></td>
             <td>
               <strong><a href="/admin/apps/<%= app.id %>" class="app-link"><%= app.name %></a></strong>
               <br/><small class="text-muted"><%= app.safe_name %></small>
+              <% if (app.group) { %>
+                <br/><span class="group-dot" style="background:<%= app.group.color %>"></span><small class="text-muted"><%= app.group.name %></small>
+              <% } %>
+              <% if (app.frameworks && app.frameworks.length > 0) { %>
+                <div class="framework-badges">
+                  <% app.frameworks.forEach(function(fw) { %>
+                    <span class="fw-badge" style="background:<%= fw.color %>22;color:<%= fw.color %>;border:1px solid <%= fw.color %>44"><%= fw.label %></span>
+                  <% }) %>
+                </div>
+              <% } %>
+              <% if (app.tags) { %>
+                <div class="tag-badges">
+                  <% app.tags.split(',').map(t => t.trim()).filter(Boolean).forEach(function(tag) { %>
+                    <span class="tag-badge"><%= tag %></span>
+                  <% }) %>
+                </div>
+              <% } %>
             </td>
             <td>
               <a href="<%= app.repo_url %>" target="_blank" rel="noopener noreferrer" class="text-muted repo-link">
@@ -46,6 +66,15 @@
             <td><code><%= app.branch %></code></td>
             <td><code><%= app.port %></code></td>
             <td><%- include('../partials/status-badge', {status: app.status}) %></td>
+            <td>
+              <% if (app.health_status === 'healthy') { %>
+                <span class="health-dot health-healthy" title="Healthy"></span>
+              <% } else if (app.health_status === 'unhealthy') { %>
+                <span class="health-dot health-unhealthy" title="Unhealthy"></span>
+              <% } else { %>
+                <span class="health-dot health-unknown" title="Unknown"></span>
+              <% } %>
+            </td>
             <td class="text-muted">
               <%= app.last_deployed_at ? new Date(app.last_deployed_at).toLocaleString() : '—' %>
             </td>
@@ -65,7 +94,7 @@
                 </form>
               <% } %>
               <form action="/admin/apps/<%= app.id %>/rebuild" method="POST" class="inline-form">
-                <button type="submit" class="btn btn-sm btn-info confirm-action" data-confirm="Rebuild app '<%= app.name %>'? This will stop and re-deploy it.">Rebuild</button>
+                <button type="submit" class="btn btn-sm btn-info confirm-action" data-confirm="Rebuild app '<%= app.name %>'?">Rebuild</button>
               </form>
               <a href="/admin/apps/<%= app.id %>/logs" class="btn btn-sm btn-secondary">Logs</a>
               <form action="/admin/apps/<%= app.id %>/delete" method="POST" class="inline-form">
@@ -76,6 +105,12 @@
         <% }) %>
       </tbody>
     </table>
+    <div class="bulk-actions" id="bulkActions" style="display:none;">
+      <span class="bulk-count" id="bulkCount">0 selected</span>
+      <button class="btn btn-sm btn-success" onclick="bulkAction('start')">▶ Start Selected</button>
+      <button class="btn btn-sm btn-warning" onclick="bulkAction('stop')">⏹ Stop Selected</button>
+      <button class="btn btn-sm btn-secondary" onclick="bulkAction('restart')">↺ Restart Selected</button>
+    </div>
   <% } %>
 </div>
 

@@ -1,5 +1,19 @@
     </main>
   </div>
+
+  <!-- Collapsible terminal log panel -->
+  <div class="terminal-panel" id="terminalPanel">
+    <div class="terminal-header" onclick="toggleTerminal()">
+      <span class="terminal-title">🖥 System Logs</span>
+      <span class="terminal-toggle" id="terminalToggle">▲</span>
+    </div>
+    <div class="terminal-body" id="terminalBody">
+      <div class="terminal-output" id="terminalOutput">
+        <span class="terminal-placeholder">Connecting to log stream…</span>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/admin.js"></script>
   <script>
     // Inject CSRF token into all forms that don't already have it

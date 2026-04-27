@@ -1,4 +1,4 @@
-<%- include('../partials/header', {title: title, username: username}) %>
+<%- include('../partials/header', {title: title}) %>
 
 <div class="page-header">
   <h1 class="page-title">Deploy New App</h1>
@@ -9,107 +9,150 @@
   <div class="alert alert-danger"><%= error %></div>
 <% } %>
 
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-header"><h2>Quick Templates</h2></div>
+  <div class="template-grid">
+    <button class="template-btn" onclick="applyTemplate('express')">🟢 Express API</button>
+    <button class="template-btn" onclick="applyTemplate('react')">⚛️ React SPA</button>
+    <button class="template-btn" onclick="applyTemplate('next')">▲ Next.js</button>
+    <button class="template-btn" onclick="applyTemplate('static')">🌐 Static Site</button>
+  </div>
+</div>
+
 <div class="card">
   <form action="/admin/apps" method="POST" class="app-form" id="deployForm" novalidate>
     <div class="form-grid">
       <div class="form-group">
-        <label class="form-label" for="name">App Name <span class="required">*</span></label>
-        <input
-          class="form-input"
-          type="text"
-          id="name"
-          name="name"
-          placeholder="my-awesome-app"
-          maxlength="50"
-          required
-          autofocus
-        />
+        <label class="form-label" for="name">
+          App Name <span class="required">*</span>
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Unique name for your app. Lowercase letters, numbers, hyphens." aria-label="App Name field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="name" name="name" placeholder="my-awesome-app" maxlength="50" required autofocus />
         <small class="form-hint">Lowercase letters, numbers, hyphens. Used as a unique identifier.</small>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="repoUrl">GitHub Repository URL <span class="required">*</span></label>
-        <input
-          class="form-input"
-          type="text"
-          id="repoUrl"
-          name="repoUrl"
-          placeholder="https://github.com/username/repo"
-          required
-        />
+        <label class="form-label" for="repoUrl">
+          GitHub Repository URL <span class="required">*</span>
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="HTTPS or SSH GitHub URL" aria-label="Repository URL field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="repoUrl" name="repoUrl" placeholder="https://github.com/username/repo" required />
         <small class="form-hint">HTTPS or SSH GitHub URL.</small>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="branch">Branch</label>
-        <input
-          class="form-input"
-          type="text"
-          id="branch"
-          name="branch"
-          placeholder="main"
-          value="main"
-        />
+        <label class="form-label" for="branch">Branch
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Git branch to deploy" aria-label="Branch field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="branch" name="branch" placeholder="main" value="main" />
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="buildCommand">Build Command</label>
-        <input
-          class="form-input"
-          type="text"
-          id="buildCommand"
-          name="buildCommand"
-          placeholder="npm install && npm run build"
-          value="npm install && npm run build"
-        />
+        <label class="form-label" for="service_type">
+          Service Type
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="auto: detect automatically; static: serve with nginx; node: Node.js app" aria-label="Service Type field documentation">ℹ️</a>
+        </label>
+        <select class="form-input" id="service_type" name="service_type">
+          <option value="auto">Auto-detect</option>
+          <option value="node">Node.js</option>
+          <option value="static">Static / HTML</option>
+        </select>
       </div>
 
       <div class="form-group">
-        <label class="form-label" for="startCommand">Start Command</label>
-        <input
-          class="form-input"
-          type="text"
-          id="startCommand"
-          name="startCommand"
-          placeholder="npm start"
-          value="npm start"
-        />
+        <label class="form-label" for="buildCommand">
+          Build Command
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Command to build your app" aria-label="Build Command field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="buildCommand" name="buildCommand" placeholder="npm install &amp;&amp; npm run build" value="npm install &amp;&amp; npm run build" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="startCommand">
+          Start Command
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Command to start your app" aria-label="Start Command field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="startCommand" name="startCommand" placeholder="npm start" value="npm start" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="description">Description</label>
+        <input class="form-input" type="text" id="description" name="description" placeholder="Optional description" maxlength="500" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="group_id">Group</label>
+        <select class="form-input" id="group_id" name="group_id">
+          <option value="">— No Group —</option>
+          <% if (typeof groups !== 'undefined') { groups.forEach(function(g) { %>
+            <option value="<%= g.id %>"><%= g.name %></option>
+          <% }); } %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="public_hostname">
+          Public Hostname
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Full URL if using a reverse proxy (e.g. https://myapp.example.com)" aria-label="Public Hostname field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="public_hostname" name="public_hostname" placeholder="https://myapp.example.com" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="tags">Tags <small class="text-muted">(comma-separated)</small></label>
+        <input class="form-input" type="text" id="tags" name="tags" placeholder="production, api, v2" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cpu_limit">
+          CPU Limit
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Docker --cpus value, e.g. 0.5 for half a CPU" aria-label="CPU Limit field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="cpu_limit" name="cpu_limit" placeholder="0.5" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="memory_limit">
+          Memory Limit
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Docker --memory value, e.g. 512m or 1g" aria-label="Memory Limit field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="memory_limit" name="memory_limit" placeholder="512m" />
       </div>
 
       <div class="form-group form-group-full">
         <label class="form-label" for="envVars">Environment Variables</label>
-        <textarea
-          class="form-input form-textarea"
-          id="envVars"
-          name="envVars"
-          rows="6"
-          placeholder="KEY=value&#10;DATABASE_URL=postgres://...&#10;NODE_ENV=production"
-        ></textarea>
+        <textarea class="form-input form-textarea" id="envVars" name="envVars" rows="6" placeholder="KEY=value&#10;DATABASE_URL=postgres://...&#10;NODE_ENV=production"></textarea>
         <small class="form-hint">One KEY=VALUE per line. Lines starting with # are ignored.</small>
       </div>
 
       <div class="form-group">
         <label class="form-label" for="port">Host Port (optional)</label>
-        <input
-          class="form-input"
-          type="number"
-          id="port"
-          name="port"
-          placeholder="Auto-assigned"
-          min="4000"
-          max="4999"
-        />
-        <small class="form-hint">Leave blank to auto-assign a port from the available range.</small>
+        <input class="form-input" type="number" id="port" name="port" placeholder="Auto-assigned" min="4000" max="4999" />
+        <small class="form-hint">Leave blank to auto-assign.</small>
       </div>
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="btn btn-primary btn-lg" id="deployBtn">
-        🚀 Deploy App
-      </button>
+      <button type="submit" class="btn btn-primary btn-lg" id="deployBtn">🚀 Deploy App</button>
       <a href="/admin/apps" class="btn btn-secondary btn-lg">Cancel</a>
     </div>
   </form>
 </div>
+
+<script>
+var TEMPLATES = {
+  express: { buildCommand: 'npm install', startCommand: 'npm start', service_type: 'node' },
+  react: { buildCommand: 'npm install && npm run build', startCommand: 'npx serve -s build -l 3000', service_type: 'node' },
+  next: { buildCommand: 'npm install && npm run build', startCommand: 'npm start', service_type: 'node' },
+  static: { buildCommand: '', startCommand: '', service_type: 'static' },
+};
+function applyTemplate(name) {
+  var t = TEMPLATES[name];
+  if (!t) return;
+  if (t.buildCommand !== undefined) document.getElementById('buildCommand').value = t.buildCommand;
+  if (t.startCommand !== undefined) document.getElementById('startCommand').value = t.startCommand;
+  if (t.service_type) document.getElementById('service_type').value = t.service_type;
+}
+</script>
 
 <%- include('../partials/footer') %>
