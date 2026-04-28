@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const requireAuth = require('../middleware/requireAuth');
 const appService = require('../services/appService');
+const logService = require('../services/logService');
 const config = require('../config/env');
 const { safeJoin } = require('../utils/paths');
 
@@ -25,6 +26,7 @@ router.post('/admin/apps', async (req, res, next) => {
   try {
     const app = await appService.createApp(req.body);
     appService.deployApp(app.id).catch((err) => {
+      logService.addLog(app.id, 'error', `Background deploy failed: ${err.message}`);
       console.error(`Background deploy error for app ${app.id}:`, err.message);
     });
     res.redirect(`/admin/apps/${app.id}`);
@@ -91,6 +93,7 @@ router.post('/admin/apps/:id/rebuild', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     appService.rebuildApp(id).catch((err) => {
+      logService.addLog(id, 'error', `Background rebuild failed: ${err.message}`);
       console.error(`Background rebuild error for app ${id}:`, err.message);
     });
     res.redirect(`/admin/apps/${id}`);
@@ -103,6 +106,7 @@ router.post('/admin/apps/:id/pull', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     appService.pullAndRedeploy(id).catch((err) => {
+      logService.addLog(id, 'error', `Background pull+redeploy failed: ${err.message}`);
       console.error(`Background pull+redeploy error for app ${id}:`, err.message);
     });
     res.redirect(`/admin/apps/${id}`);

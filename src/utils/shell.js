@@ -20,7 +20,7 @@ function runCommand(cmd, args = [], options = {}) {
         }
         resolve({
           stdout: stdout || '',
-          stderr: stderr || '',
+          stderr: stderr || (error && error.message ? error.message : ''),
           exitCode: error ? (error.code || 1) : 0,
         });
       }

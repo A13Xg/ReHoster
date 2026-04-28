@@ -21,6 +21,21 @@ async function main() {
 
   const config = require('./config/env');
   const app = require('./app');
+  const dockerService = require('./services/dockerService');
+
+  // Log Docker command resolution early to diagnose shell/path isolation issues.
+  const dockerInfo = dockerService.getDockerCommandInfo();
+  logger.info({ docker: dockerInfo }, 'Docker command resolution');
+  try {
+    const dockerAvailable = await dockerService.isDockerAvailable();
+    if (dockerAvailable) {
+      logger.info('Docker daemon check passed');
+    } else {
+      logger.warn('Docker daemon check failed (docker info not reachable)');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Docker availability check threw an error');
+  }
 
   // Prune old logs on startup
   try {

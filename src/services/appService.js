@@ -11,6 +11,8 @@ const dockerService = require('./dockerService');
 const logService = require('./logService');
 const frameworkDetectService = require('./frameworkDetectService');
 
+const DOCKER_UNAVAILABLE_MESSAGE = 'Docker CLI or daemon is not available. Install Docker and ensure the docker command works in the ReHoster server environment.';
+
 function getAllApps() {
   return db.prepare("SELECT * FROM apps WHERE status != 'deleted' ORDER BY created_at DESC").all();
 }
@@ -21,6 +23,29 @@ function getApp(id) {
 
 function updateStatus(id, status) {
   db.prepare('UPDATE apps SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+}
+
+async function ensureDockerAvailable() {
+  if (!await dockerService.isDockerAvailable()) {
+    const error = new Error(DOCKER_UNAVAILABLE_MESSAGE);
+    error.status = 503;
+    throw error;
+  }
+}
+
+async function runDockerLifecycleAction(app, action, targetStatus, successMessage) {
+  try {
+    await ensureDockerAvailable();
+    await action();
+    updateStatus(app.id, targetStatus);
+    logService.addLog(app.id, 'info', successMessage);
+  } catch (err) {
+    if (targetStatus === 'running') {
+      updateStatus(app.id, 'failed');
+    }
+    logService.addLog(app.id, 'error', err.message);
+    throw err;
+  }
 }
 
 async function createApp(data) {
@@ -113,9 +138,18 @@ async function deployApp(appId) {
     db.prepare('UPDATE apps SET detected_frameworks = ? WHERE id = ?').run(detectedFrameworksJson, appId);
     log('info', `Detected frameworks: ${frameworks.map((f) => f.label).join(', ')}`);
 
+    await ensureDockerAvailable();
+
     updateStatus(appId, 'building');
-    log('info', 'Generating Dockerfile if not present');
-    await dockerService.generateDockerfile(app.local_path, app.service_type, detectedFrameworksJson);
+    log('info', 'Preparing Dockerfile');
+    await dockerService.generateDockerfile(
+      app.local_path,
+      app.service_type,
+      detectedFrameworksJson,
+      app.build_command,
+      app.start_command,
+      app.container_port
+    );
 
     log('info', `Building Docker image: ${app.image_name}`);
     const buildResult = await dockerService.buildImage(app.local_path, app.image_name);
@@ -157,58 +191,87 @@ async function deployApp(appId) {
 async function startApp(id) {
   const app = getApp(id);
   if (!app) throw new Error(`App ${id} not found`);
-  await dockerService.startContainer(app.container_name);
-  updateStatus(id, 'running');
-  logService.addLog(id, 'info', 'App started');
+  await runDockerLifecycleAction(
+    app,
+    () => dockerService.startContainer(app.container_name),
+    'running',
+    'App started'
+  );
 }
 
 async function stopApp(id) {
   const app = getApp(id);
   if (!app) throw new Error(`App ${id} not found`);
-  await dockerService.stopContainer(app.container_name);
-  updateStatus(id, 'stopped');
-  logService.addLog(id, 'info', 'App stopped');
+  await runDockerLifecycleAction(
+    app,
+    () => dockerService.stopContainer(app.container_name),
+    'stopped',
+    'App stopped'
+  );
 }
 
 async function restartApp(id) {
   const app = getApp(id);
   if (!app) throw new Error(`App ${id} not found`);
-  await dockerService.restartContainer(app.container_name);
-  updateStatus(id, 'running');
-  logService.addLog(id, 'info', 'App restarted');
+  await runDockerLifecycleAction(
+    app,
+    () => dockerService.restartContainer(app.container_name),
+    'running',
+    'App restarted'
+  );
 }
 
 async function rebuildApp(id) {
   const app = getApp(id);
   if (!app) throw new Error(`App ${id} not found`);
-  logService.addLog(id, 'info', 'Rebuild triggered — stopping and removing old container/image');
-  await dockerService.stopContainer(app.container_name).catch(() => {});
-  await dockerService.removeContainer(app.container_name).catch(() => {});
-  await dockerService.removeImage(app.image_name).catch(() => {});
-  await deployApp(id);
+  try {
+    await ensureDockerAvailable();
+    logService.addLog(id, 'info', 'Rebuild triggered — stopping and removing old container/image');
+    await dockerService.stopContainer(app.container_name).catch(() => {});
+    await dockerService.removeContainer(app.container_name).catch(() => {});
+    await dockerService.removeImage(app.image_name).catch(() => {});
+    await deployApp(id);
+  } catch (err) {
+    updateStatus(id, 'failed');
+    logService.addLog(id, 'error', err.message);
+    throw err;
+  }
 }
 
 async function pullAndRedeploy(id) {
   const app = getApp(id);
   if (!app) throw new Error(`App ${id} not found`);
-  logService.addLog(id, 'info', 'Pull & redeploy triggered');
-  if (app.local_path && fs.existsSync(app.local_path)) {
-    await gitService.pullLatest(app.local_path);
-    logService.addLog(id, 'info', 'git pull completed');
+  try {
+    await ensureDockerAvailable();
+    logService.addLog(id, 'info', 'Pull & redeploy triggered');
+    if (app.local_path && fs.existsSync(app.local_path)) {
+      await gitService.pullLatest(app.local_path);
+      logService.addLog(id, 'info', 'git pull completed');
+    }
+    await dockerService.stopContainer(app.container_name).catch(() => {});
+    await dockerService.removeContainer(app.container_name).catch(() => {});
+    await dockerService.removeImage(app.image_name).catch(() => {});
+    await deployApp(id);
+  } catch (err) {
+    updateStatus(id, 'failed');
+    logService.addLog(id, 'error', err.message);
+    throw err;
   }
-  await dockerService.stopContainer(app.container_name).catch(() => {});
-  await dockerService.removeContainer(app.container_name).catch(() => {});
-  await dockerService.removeImage(app.image_name).catch(() => {});
-  await deployApp(id);
 }
 
 async function deleteApp(id) {
   const app = getApp(id);
   if (!app) throw new Error(`App ${id} not found`);
 
-  await dockerService.stopContainer(app.container_name).catch(() => {});
-  await dockerService.removeContainer(app.container_name).catch(() => {});
-  await dockerService.removeImage(app.image_name).catch(() => {});
+  // Deletion should still work even if Docker CLI/daemon is unavailable.
+  try {
+    await ensureDockerAvailable();
+    await dockerService.stopContainer(app.container_name).catch(() => {});
+    await dockerService.removeContainer(app.container_name).catch(() => {});
+    await dockerService.removeImage(app.image_name).catch(() => {});
+  } catch (err) {
+    logService.addLog(id, 'warn', `Docker cleanup skipped during delete: ${err.message}`);
+  }
 
   if (app.local_path && fs.existsSync(app.local_path)) {
     fs.rmSync(app.local_path, { recursive: true, force: true });
@@ -225,6 +288,7 @@ async function getAppLogs(id) {
   const dbLogs = logService.getAppLogs(id, 200);
   let dockerLogs = '';
   try {
+    await ensureDockerAvailable();
     dockerLogs = await dockerService.getLogs(app.container_name, 200);
   } catch {
     dockerLogs = '(Docker logs unavailable)';

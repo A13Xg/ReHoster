@@ -142,7 +142,7 @@
 <script>
 var TEMPLATES = {
   express: { buildCommand: 'npm install', startCommand: 'npm start', service_type: 'node' },
-  react: { buildCommand: 'npm install && npm run build', startCommand: 'npx serve -s build -l 3000', service_type: 'node' },
+  react: { buildCommand: 'npm run build', startCommand: '', service_type: 'static' },
   next: { buildCommand: 'npm install && npm run build', startCommand: 'npm start', service_type: 'node' },
   static: { buildCommand: '', startCommand: '', service_type: 'static' },
 };
