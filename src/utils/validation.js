@@ -63,6 +63,20 @@ function validateAppInput(body) {
     errors.push('Branch name contains invalid characters');
   }
 
+  if (body.port && String(body.port).trim().length > 0) {
+    const hostPort = parseInt(String(body.port).trim(), 10);
+    if (!Number.isInteger(hostPort) || hostPort < 1 || hostPort > 65535) {
+      errors.push('External host port must be a valid port number (1-65535)');
+    }
+  }
+
+  if (body.containerPort && String(body.containerPort).trim().length > 0) {
+    const containerPort = parseInt(String(body.containerPort).trim(), 10);
+    if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
+      errors.push('Internal container port must be a valid port number (1-65535)');
+    }
+  }
+
   return { valid: errors.length === 0, errors };
 }
 

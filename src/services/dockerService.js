@@ -167,6 +167,14 @@ WORKDIR /app
 COPY --chown=node:node package*.json ./
 RUN ${installCommand} --omit=dev
 COPY --chown=node:node --from=builder /app .
+RUN apk add --no-cache python3 py3-pip && ln -sf /usr/bin/python3 /usr/bin/python \
+  && python3 -m venv /opt/venv \
+  && chown -R node:node /opt/venv
+RUN mkdir -p /app/output /app/cache && chown -R node:node /app
+ENV VIRTUAL_ENV=/opt/venv
+ENV PYTHONUSERBASE=/opt/venv
+ENV PATH="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 ENV NODE_ENV=production
 ENV PORT=${containerPort}
 EXPOSE ${containerPort}
@@ -194,7 +202,13 @@ RUN mkdir -p /site && \
   else echo "No static build output found (expected dist, build, or public)." >&2; exit 1; fi
 
 FROM nginx:alpine
+RUN rm -rf /usr/share/nginx/html/*
 COPY --from=builder /site /usr/share/nginx/html
+RUN apk add --no-cache python3 py3-pip && ln -sf /usr/bin/python3 /usr/bin/python \
+  && python3 -m venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 RUN chmod -R a+rX /usr/share/nginx/html
 RUN find /etc/nginx -name 'default.conf' -delete 2>/dev/null || true; CONF_DIR=$(if [ -d /etc/nginx/http.d ]; then echo /etc/nginx/http.d; else echo /etc/nginx/conf.d; fi); printf '%s\\n' 'server {' '  listen ${containerPort};' '  server_name _;' '  root /usr/share/nginx/html;' '  index index.html;' '' '  location / {' '    try_files $uri $uri/ /index.html;' '  }' '}' > "$CONF_DIR/default.conf"
 EXPOSE ${containerPort}
@@ -209,7 +223,13 @@ function buildPureStaticDockerfile({ buildCommand, containerPort }) {
   if (!hasBuild) {
     return `${GENERATED_DOCKERFILE_MARKER}
 FROM nginx:alpine
+RUN rm -rf /usr/share/nginx/html/*
 COPY . /usr/share/nginx/html
+RUN apk add --no-cache python3 py3-pip && ln -sf /usr/bin/python3 /usr/bin/python \
+  && python3 -m venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 RUN chmod -R a+rX /usr/share/nginx/html
 RUN find /etc/nginx -name 'default.conf' -delete 2>/dev/null || true; CONF_DIR=$(if [ -d /etc/nginx/http.d ]; then echo /etc/nginx/http.d; else echo /etc/nginx/conf.d; fi); printf '%s\\n' 'server {' '  listen ${containerPort};' '  server_name _;' '  root /usr/share/nginx/html;' '  index index.html;' '' '  location / {' '    try_files $uri $uri/ /index.html;' '  }' '}' > "$CONF_DIR/default.conf"
 EXPOSE ${containerPort}
@@ -230,7 +250,13 @@ RUN mkdir -p /site && \\
   else cp -R . /site/; fi
 
 FROM nginx:alpine
+RUN rm -rf /usr/share/nginx/html/*
 COPY --from=builder /site /usr/share/nginx/html
+RUN apk add --no-cache python3 py3-pip && ln -sf /usr/bin/python3 /usr/bin/python \
+  && python3 -m venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 RUN chmod -R a+rX /usr/share/nginx/html
 RUN find /etc/nginx -name 'default.conf' -delete 2>/dev/null || true; CONF_DIR=$(if [ -d /etc/nginx/http.d ]; then echo /etc/nginx/http.d; else echo /etc/nginx/conf.d; fi); printf '%s\\n' 'server {' '  listen ${containerPort};' '  server_name _;' '  root /usr/share/nginx/html;' '  index index.html;' '' '  location / {' '    try_files $uri $uri/ /index.html;' '  }' '}' > "$CONF_DIR/default.conf"
 EXPOSE ${containerPort}

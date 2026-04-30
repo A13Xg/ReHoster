@@ -26,7 +26,7 @@
           <th>Name</th>
           <th>Repo</th>
           <th>Branch</th>
-          <th>Port</th>
+          <th>Port Mapping</th>
           <th>Status</th>
           <th>Health</th>
           <th>Last Deployed</th>
@@ -64,7 +64,7 @@
               </a>
             </td>
             <td><code><%= app.branch %></code></td>
-            <td><code><%= app.port %></code></td>
+            <td><code><%= app.port %> → <%= app.container_port || 3000 %></code></td>
             <td><%- include('../partials/status-badge', {status: app.status}) %></td>
             <td>
               <% if (app.health_status === 'healthy') { %>

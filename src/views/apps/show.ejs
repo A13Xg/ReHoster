@@ -39,11 +39,19 @@
         <span class="detail-value"><%- include('../partials/status-badge', {status: app.status}) %></span>
       </div>
       <div class="detail-row">
-        <span class="detail-label">Host Port</span>
+        <span class="detail-label">External Host Port</span>
         <span class="detail-value">
           <code><%= app.port %></code>
           <button class="copy-btn" data-copy="<%= app.port %>" title="Copy port">📋</button>
         </span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Internal Container Port</span>
+        <span class="detail-value"><code><%= app.container_port || 3000 %></code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Port Mapping</span>
+        <span class="detail-value"><code><%= app.port %> → <%= app.container_port || 3000 %></code></span>
       </div>
       <div class="detail-row">
         <span class="detail-label">URL</span>

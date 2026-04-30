@@ -19,6 +19,8 @@ router.get('/admin/apps/new', (req, res) => {
     title: 'Deploy New App',
     error: null,
     groups,
+    defaultContainerPort: config.defaultContainerPort,
+    formData: {},
   });
 });
 
@@ -36,6 +38,8 @@ router.post('/admin/apps', async (req, res, next) => {
       title: 'Deploy New App',
       error: err.message,
       groups,
+      defaultContainerPort: config.defaultContainerPort,
+      formData: req.body || {},
     });
   }
 });
