@@ -106,6 +106,119 @@ echo        Docker diagnostic: !DOCKER_DIAG_LINE!
 call :log "Docker diagnostic line: !DOCKER_DIAG_LINE!"
 exit /b 0
 
+:is_port_in_use
+set "TARGET_PORT=%~1"
+set "PORT_BUSY=0"
+for /f "usebackq delims=" %%L in (`netstat -ano ^| findstr /R /C:":!TARGET_PORT! .*LISTENING"`) do (
+    set "PORT_BUSY=1"
+    goto :is_port_in_use_done
+)
+:is_port_in_use_done
+exit /b 0
+
+:check_panel_port_conflict
+set "PANEL_PORT=3000"
+if exist ".env" (
+    for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+        if /I "%%A"=="PORT" (
+            if not "%%B"=="" set "PANEL_PORT=%%B"
+        )
+    )
+)
+set "PANEL_PORT=!PANEL_PORT: =!"
+call :is_port_in_use !PANEL_PORT!
+if "!PORT_BUSY!"=="1" (
+    echo        WARNING: Port !PANEL_PORT! appears to already be in use.
+    echo        ReHoster may fail to start if another service is bound to this port.
+    call :log "Panel port conflict detected on !PANEL_PORT!"
+) else (
+    echo        Panel port !PANEL_PORT! appears available.
+    call :log "Panel port available: !PANEL_PORT!"
+)
+exit /b 0
+
+:check_write_access
+set "WRITE_TARGET=%~1"
+set "WRITE_LABEL=%~2"
+set "WRITE_PROBE=!WRITE_TARGET!\.rehoster_write_test.tmp"
+echo probe > "!WRITE_PROBE!" 2>nul
+if errorlevel 1 (
+    echo.
+    echo  ERROR: Cannot write to !WRITE_LABEL! at !WRITE_TARGET!
+    echo  Fix filesystem permissions and run launcher again.
+    call :log "Write access failed for !WRITE_LABEL! at !WRITE_TARGET!"
+    pause
+    exit /b 1
+)
+del "!WRITE_PROBE!" >nul 2>&1
+call :log "Write access OK for !WRITE_LABEL! at !WRITE_TARGET!"
+exit /b 0
+
+:start_docker_desktop
+set "DOCKER_DESKTOP_EXE="
+if exist "C:\Program Files\Docker\Docker\Docker Desktop.exe" set "DOCKER_DESKTOP_EXE=C:\Program Files\Docker\Docker\Docker Desktop.exe"
+if not defined DOCKER_DESKTOP_EXE if exist "%LocalAppData%\Docker\Docker Desktop.exe" set "DOCKER_DESKTOP_EXE=%LocalAppData%\Docker\Docker Desktop.exe"
+
+if not defined DOCKER_DESKTOP_EXE (
+    echo        Docker Desktop executable not found; cannot auto-start Desktop.
+    call :log "Docker Desktop executable not found for auto-start"
+    exit /b 1
+)
+
+tasklist /FI "IMAGENAME eq Docker Desktop.exe" 2>nul | find /I "Docker Desktop.exe" >nul
+if errorlevel 1 (
+    echo        Attempting to launch Docker Desktop...
+    call :log "Attempting Docker Desktop launch: !DOCKER_DESKTOP_EXE!"
+    start "Docker Desktop" "!DOCKER_DESKTOP_EXE!" >nul 2>&1
+    if errorlevel 1 (
+        echo        Failed to launch Docker Desktop automatically.
+        call :log "Docker Desktop launch command failed"
+        exit /b 1
+    )
+) else (
+    echo        Docker Desktop process is already running.
+    call :log "Docker Desktop process already running"
+)
+
+exit /b 0
+
+:wait_for_docker_daemon
+set "WAIT_SECONDS=%~1"
+if "!WAIT_SECONDS!"=="" set "WAIT_SECONDS=45"
+set /a WAIT_ITER=0
+
+:wait_for_docker_daemon_loop
+call :check_docker_info
+if not errorlevel 1 (
+    echo        Docker daemon became reachable.
+    call :log "Docker daemon reachable after wait"
+    exit /b 0
+)
+
+set /a WAIT_ITER+=1
+if !WAIT_ITER! GEQ !WAIT_SECONDS! (
+    call :log "Docker daemon wait timed out after !WAIT_SECONDS! seconds"
+    exit /b 1
+)
+
+if !WAIT_ITER! EQU 1 (
+    echo        Waiting for Docker daemon to initialise...
+    call :log "Waiting for Docker daemon initialisation"
+)
+
+timeout /t 1 /nobreak >nul
+goto :wait_for_docker_daemon_loop
+
+:recover_docker_daemon
+call :start_docker_desktop
+call :wait_for_docker_daemon 60
+if errorlevel 1 (
+    echo        Docker daemon is still unreachable after auto-start attempt.
+    call :log "Docker daemon unreachable after auto-start/wait"
+    exit /b 1
+)
+exit /b 0
+
 :prompt_install
 set "PROMPT_COMPONENT=%~1"
 set "PROMPT_REASON=%~2"
@@ -351,6 +464,12 @@ if not exist "logs"         mkdir logs
 if not exist "managed-apps" mkdir managed-apps
 echo        data, logs, managed-apps - OK
 call :log "Required directories verified"
+call :check_write_access "%cd%\data" "data directory"
+if errorlevel 1 exit /b 1
+call :check_write_access "%cd%\logs" "logs directory"
+if errorlevel 1 exit /b 1
+call :check_write_access "%cd%\managed-apps" "managed-apps directory"
+if errorlevel 1 exit /b 1
 git --version >nul 2>&1
 if errorlevel 1 (
     echo        WARNING: Git is not available from this shell.
@@ -383,13 +502,24 @@ if errorlevel 1 (
     echo        ReHoster will start, but app build/deploy actions will fail until Docker Desktop/Engine is installed and running.
     call :log "Docker unavailable"
     call :docker_info_diagnostic
+    call :recover_docker_daemon
+    if not errorlevel 1 (
+        echo        Docker daemon recovered via launcher auto-start.
+        call :log "Docker daemon recovered by launcher"
+        goto :docker_ready
+    )
     call :prompt_install "Docker" "Docker is needed to build and run managed applications."
     if not errorlevel 1 call :run_installer
     call :refresh_docker_context
     call :check_docker_info
     if errorlevel 1 (
+        call :recover_docker_daemon
+    )
+    call :check_docker_info
+    if errorlevel 1 (
         echo        !INSTALLER_HINT!
         echo        Tip: you can set DOCKER_CMD in .env to the full docker.exe path if your shell is isolated.
+        echo        Also ensure Docker Desktop is running and fully initialised.
         call :log "Docker still unavailable after prompt/install path"
         call :docker_info_diagnostic
     ) else (
@@ -400,6 +530,9 @@ if errorlevel 1 (
     echo        Docker - OK
     call :log "Docker OK"
 )
+
+:docker_ready
+call :check_panel_port_conflict
 
 :: ── Launch ────────────────────────────────────────────────────────────────────
 echo.

@@ -82,7 +82,7 @@ function csrfMiddleware(req, res, next) {
   res.locals.csrfToken = generateCsrfToken(req);
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     if (!CSRF_SKIP_PATHS.has(req.path)) {
-      const token = req.body._csrf || req.headers['x-csrf-token'];
+      const token = req.body._csrf || req.headers['x-csrf-token'] || req.headers['csrf-token'];
       if (!token || token !== req.session.csrfToken) {
         const err = new Error('Invalid CSRF token');
         err.status = 403;

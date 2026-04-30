@@ -32,6 +32,81 @@ INSTALLER_CMD='bash ./install-prereqs.sh'
 
 log "Launcher started"
 
+check_write_access() {
+    local target="$1"
+    local label="$2"
+    local probe="${target}/.rehoster_write_test.tmp"
+    if ! (echo probe > "$probe") 2>/dev/null; then
+        echo ""
+        error "Cannot write to ${label} at ${target}. Fix filesystem permissions and run launcher again."
+    fi
+    rm -f "$probe" >/dev/null 2>&1 || true
+    log "Write access OK for ${label} at ${target}"
+}
+
+check_panel_port_conflict() {
+    local panel_port=3000
+    if [ -f ".env" ]; then
+        local env_port
+        env_port=$(grep -E '^PORT=' .env | tail -n 1 | cut -d'=' -f2- | tr -d '[:space:]') || true
+        if [ -n "${env_port:-}" ]; then
+            panel_port="$env_port"
+        fi
+    fi
+
+    if command -v ss >/dev/null 2>&1; then
+        if ss -ltn "( sport = :${panel_port} )" 2>/dev/null | grep -q LISTEN; then
+            warn "Port ${panel_port} appears to already be in use. ReHoster may fail to start if another service is bound to this port."
+            log "Panel port conflict detected on ${panel_port}"
+            return
+        fi
+    elif command -v netstat >/dev/null 2>&1; then
+        if netstat -ltn 2>/dev/null | grep -q ":${panel_port} "; then
+            warn "Port ${panel_port} appears to already be in use. ReHoster may fail to start if another service is bound to this port."
+            log "Panel port conflict detected on ${panel_port}"
+            return
+        fi
+    fi
+
+    info "Panel port ${panel_port} appears available."
+    log "Panel port available: ${panel_port}"
+}
+
+recover_docker_daemon() {
+    if docker info >/dev/null 2>&1; then
+        return 0
+    fi
+
+    warn "Docker daemon is unreachable; attempting automatic recovery..."
+    log "Attempting Docker daemon recovery"
+
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl start docker >/dev/null 2>&1; then
+            log "Started docker service via systemctl"
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            sudo systemctl start docker >/dev/null 2>&1 || true
+            log "Attempted sudo systemctl start docker"
+        else
+            log "systemctl start docker not permitted without sudo password"
+        fi
+    elif command -v service >/dev/null 2>&1; then
+        service docker start >/dev/null 2>&1 || true
+        log "Attempted service docker start"
+    fi
+
+    for _ in $(seq 1 45); do
+        if docker info >/dev/null 2>&1; then
+            info "Docker daemon became reachable."
+            log "Docker daemon reachable after recovery attempt"
+            return 0
+        fi
+        sleep 1
+    done
+
+    log "Docker daemon recovery timed out"
+    return 1
+}
+
 run_installer() {
     echo ""
     echo "       Launching prerequisite installer..."
@@ -188,6 +263,9 @@ log "Checking directories, Git, and Docker"
 mkdir -p data logs managed-apps
 info "data, logs, managed-apps - OK"
 log "Required directories verified"
+check_write_access "$(pwd)/data" "data directory"
+check_write_access "$(pwd)/logs" "logs directory"
+check_write_access "$(pwd)/managed-apps" "managed-apps directory"
 if command -v git >/dev/null 2>&1; then
     info "$(git --version) - OK"
     log "Git OK: $(git --version)"
@@ -211,17 +289,30 @@ if docker info >/dev/null 2>&1; then
 else
     warn "Docker is not available from this shell. ReHoster will start, but app build/deploy actions will fail until Docker is installed and running."
     log "Docker unavailable"
-    if prompt_install "Docker" "Docker is needed to build and run managed applications."; then
-        run_installer
-    fi
-    if docker info >/dev/null 2>&1; then
-        info "Docker - OK"
-        log "Docker OK"
+    if recover_docker_daemon; then
+        info "Docker daemon recovered by launcher - OK"
+        log "Docker daemon recovered by launcher"
     else
-        warn "$INSTALLER_HINT"
-        log "Docker still unavailable after prompt/install path"
+        if prompt_install "Docker" "Docker is needed to build and run managed applications."; then
+            run_installer
+        fi
+        if docker info >/dev/null 2>&1; then
+            info "Docker - OK"
+            log "Docker OK"
+        else
+            if recover_docker_daemon; then
+                info "Docker daemon recovered by launcher - OK"
+                log "Docker daemon recovered by launcher after installer"
+            else
+                warn "$INSTALLER_HINT"
+                warn "Ensure Docker service/Desktop is running and fully initialised."
+                log "Docker still unavailable after prompt/install path"
+            fi
+        fi
     fi
 fi
+
+check_panel_port_conflict
 
 # ── Launch ────────────────────────────────────────────────────────────────────
 echo ""

@@ -217,7 +217,7 @@ function bulkAction(action) {
       headers: {
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
-        'CSRF-Token': csrf
+        'X-CSRF-Token': csrf
       },
       body: JSON.stringify({ action })
     })

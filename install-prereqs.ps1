@@ -33,6 +33,35 @@ function Write-ErrorLine($message) {
     Write-Host "   ERROR: $message" -ForegroundColor Red
 }
 
+function Convert-ExitCodeToSignedInt($code) {
+    if ($code -gt [int]::MaxValue) {
+        return [int]($code - 4294967296)
+    }
+    return [int]$code
+}
+
+function Repair-DockerDesktopPermissions {
+    $target = 'C:\ProgramData\DockerDesktop'
+    Write-WarnLine "Attempting permission repair for $target"
+    Write-Log "Attempting permission repair for $target"
+
+    if (-not (Test-Path $target)) {
+        Write-Info "$target does not exist yet; no repair needed"
+        Write-Log "$target missing; skipping permission repair"
+        return
+    }
+
+    try {
+        & takeown.exe /F $target /A /R /D Y | Out-Null
+        & icacls.exe $target /inheritance:e /grant 'Administrators:(OI)(CI)F' /T /C | Out-Null
+        Write-Info 'DockerDesktop permissions repaired for Administrators'
+        Write-Log 'DockerDesktop permissions repaired successfully'
+    } catch {
+        Write-WarnLine "Permission repair failed: $($_.Exception.Message)"
+        Write-Log "Permission repair failed: $($_.Exception.Message)"
+    }
+}
+
 function Finish-Installer($code) {
     if ($ElevatedRun) {
         Write-Host ''
@@ -88,7 +117,47 @@ function Test-Winget {
 
 function Install-WithWinget($id, $name) {
     Write-Info "Installing $name via winget..."
-    winget install --id $id --exact --accept-source-agreements --accept-package-agreements --scope machine
+    Write-Log "Running winget install for $id"
+    $process = Start-Process -FilePath 'winget.exe' `
+        -ArgumentList @('install', '--id', $id, '--exact', '--accept-source-agreements', '--accept-package-agreements', '--scope', 'machine') `
+        -NoNewWindow `
+        -Wait `
+        -PassThru
+
+    if ($process.ExitCode -eq 0) {
+        Write-Log "winget install succeeded for $id"
+        return
+    }
+
+    $signedCode = Convert-ExitCodeToSignedInt $process.ExitCode
+    Write-WarnLine "Installer failed with exit code $($process.ExitCode) (signed: $signedCode)"
+    Write-Log "winget install failed for $id with exit code $($process.ExitCode) (signed: $signedCode)"
+
+    if ($id -eq 'Docker.DockerDesktop' -and ($process.ExitCode -eq 4294967291 -or $signedCode -eq -5)) {
+        Write-WarnLine 'Detected Docker Desktop permission issue. Trying to repair and retry once.'
+        Write-Log 'Detected Docker Desktop permission-related failure; attempting repair and retry'
+        Repair-DockerDesktopPermissions
+
+        $retry = Start-Process -FilePath 'winget.exe' `
+            -ArgumentList @('install', '--id', $id, '--exact', '--accept-source-agreements', '--accept-package-agreements', '--scope', 'machine') `
+            -NoNewWindow `
+            -Wait `
+            -PassThru
+
+        if ($retry.ExitCode -eq 0) {
+            Write-Info 'Docker Desktop install succeeded after permission repair'
+            Write-Log 'Docker Desktop install succeeded on retry'
+            return
+        }
+
+        $retrySigned = Convert-ExitCodeToSignedInt $retry.ExitCode
+        Write-ErrorLine "Docker Desktop installer still failed with exit code $($retry.ExitCode) (signed: $retrySigned)"
+        Write-ErrorLine 'Open Docker Desktop installer manually as Administrator if this persists.'
+        Write-Log "Docker Desktop retry failed with exit code $($retry.ExitCode) (signed: $retrySigned)"
+        Finish-Installer 1
+    }
+
+    Finish-Installer 1
 }
 
 Write-Host "ReHoster prerequisite installer" -ForegroundColor White

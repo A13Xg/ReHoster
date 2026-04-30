@@ -11,7 +11,7 @@ const dockerService = require('./dockerService');
 const logService = require('./logService');
 const frameworkDetectService = require('./frameworkDetectService');
 
-const DOCKER_UNAVAILABLE_MESSAGE = 'Docker CLI or daemon is not available. Install Docker and ensure the docker command works in the ReHoster server environment.';
+const DOCKER_UNAVAILABLE_MESSAGE = 'Docker is not available in the ReHoster server environment. Ensure the Docker CLI is installed and the Docker daemon is running.';
 
 function getAllApps() {
   return db.prepare("SELECT * FROM apps WHERE status != 'deleted' ORDER BY created_at DESC").all();
@@ -26,8 +26,10 @@ function updateStatus(id, status) {
 }
 
 async function ensureDockerAvailable() {
-  if (!await dockerService.isDockerAvailable()) {
-    const error = new Error(DOCKER_UNAVAILABLE_MESSAGE);
+  const details = await dockerService.getDockerAvailabilityDetails();
+  if (!details.available) {
+    const reason = `${details.message} [status=${details.status}, cmd=${details.commandInfo.command}]`;
+    const error = new Error(`${DOCKER_UNAVAILABLE_MESSAGE} ${reason}`);
     error.status = 503;
     throw error;
   }

@@ -54,6 +54,71 @@ function getDockerCommandInfo() {
   };
 }
 
+function normalizeDockerFailure(output) {
+  const text = (output || '').toLowerCase();
+
+  if (text.includes('enoent') || text.includes('not recognized') || text.includes('not found')) {
+    return {
+      status: 'cli_not_found',
+      message: 'Docker CLI was not found in this runtime environment.',
+    };
+  }
+
+  if (text.includes('error during connect') || text.includes('docker desktop is not running') || text.includes('cannot connect to the docker daemon') || text.includes('open //./pipe/docker_engine')) {
+    return {
+      status: 'daemon_unreachable',
+      message: 'Docker CLI is present but the Docker daemon is not reachable. Start Docker Desktop (or the Docker service) and retry.',
+    };
+  }
+
+  if (text.includes('access is denied') || text.includes('permission denied')) {
+    return {
+      status: 'permission_denied',
+      message: 'Docker is installed, but access to the daemon was denied.',
+    };
+  }
+
+  return {
+    status: 'unknown',
+    message: 'Docker check failed for an unknown reason.',
+  };
+}
+
+async function getDockerAvailabilityDetails() {
+  const cmdInfo = getDockerCommandInfo();
+
+  if (cmdInfo.isAbsolute && cmdInfo.existsOnDisk === false) {
+    return {
+      available: false,
+      status: 'cli_not_found',
+      message: `Configured Docker command path does not exist: ${cmdInfo.command}`,
+      commandInfo: cmdInfo,
+      diagnostics: '',
+    };
+  }
+
+  const result = await runCommand(DOCKER_CMD, ['info'], { timeout: 10000 });
+  if (result.exitCode === 0) {
+    return {
+      available: true,
+      status: 'ok',
+      message: 'Docker daemon is reachable.',
+      commandInfo: cmdInfo,
+      diagnostics: '',
+    };
+  }
+
+  const diagnostics = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+  const normalized = normalizeDockerFailure(diagnostics);
+  return {
+    available: false,
+    status: normalized.status,
+    message: normalized.message,
+    commandInfo: cmdInfo,
+    diagnostics,
+  };
+}
+
 function getInstallCommand(appPath) {
   return fs.existsSync(path.join(appPath, 'package-lock.json')) ? 'npm ci' : 'npm install';
 }
@@ -104,7 +169,44 @@ RUN mkdir -p /site && \
 
 FROM nginx:alpine
 COPY --from=builder /site /usr/share/nginx/html
-RUN printf 'server {\n  listen ${containerPort};\n  server_name _;\n  root /usr/share/nginx/html;\n  index index.html;\n\n  location / {\n    try_files \\$uri \\$uri/ /index.html;\n  }\n}\n' > /etc/nginx/conf.d/default.conf
+RUN chmod -R a+rX /usr/share/nginx/html
+RUN find /etc/nginx -name 'default.conf' -delete 2>/dev/null || true; CONF_DIR=$(if [ -d /etc/nginx/http.d ]; then echo /etc/nginx/http.d; else echo /etc/nginx/conf.d; fi); printf '%s\\n' 'server {' '  listen ${containerPort};' '  server_name _;' '  root /usr/share/nginx/html;' '  index index.html;' '' '  location / {' '    try_files $uri $uri/ /index.html;' '  }' '}' > "$CONF_DIR/default.conf"
+EXPOSE ${containerPort}
+CMD ["nginx", "-g", "daemon off;"]
+`;
+}
+
+function buildPureStaticDockerfile({ buildCommand, containerPort }) {
+  // Used when no package.json is present — no Node/npm steps
+  const hasBuild = buildCommand && buildCommand.trim().length > 0;
+
+  if (!hasBuild) {
+    return `${GENERATED_DOCKERFILE_MARKER}
+FROM nginx:alpine
+COPY . /usr/share/nginx/html
+RUN chmod -R a+rX /usr/share/nginx/html
+RUN find /etc/nginx -name 'default.conf' -delete 2>/dev/null || true; CONF_DIR=$(if [ -d /etc/nginx/http.d ]; then echo /etc/nginx/http.d; else echo /etc/nginx/conf.d; fi); printf '%s\\n' 'server {' '  listen ${containerPort};' '  server_name _;' '  root /usr/share/nginx/html;' '  index index.html;' '' '  location / {' '    try_files $uri $uri/ /index.html;' '  }' '}' > "$CONF_DIR/default.conf"
+EXPOSE ${containerPort}
+CMD ["nginx", "-g", "daemon off;"]
+`;
+  }
+
+  return `${GENERATED_DOCKERFILE_MARKER}
+FROM alpine AS builder
+WORKDIR /app
+COPY . .
+RUN sh -lc ${JSON.stringify(buildCommand)}
+RUN mkdir -p /site && \\
+  if [ -d dist ]; then cp -R dist/. /site/; \\
+  elif [ -d build ]; then cp -R build/. /site/; \\
+  elif [ -d out ]; then cp -R out/. /site/; \\
+  elif [ -d public ]; then cp -R public/. /site/; \\
+  else cp -R . /site/; fi
+
+FROM nginx:alpine
+COPY --from=builder /site /usr/share/nginx/html
+RUN chmod -R a+rX /usr/share/nginx/html
+RUN find /etc/nginx -name 'default.conf' -delete 2>/dev/null || true; CONF_DIR=$(if [ -d /etc/nginx/http.d ]; then echo /etc/nginx/http.d; else echo /etc/nginx/conf.d; fi); printf '%s\\n' 'server {' '  listen ${containerPort};' '  server_name _;' '  root /usr/share/nginx/html;' '  index index.html;' '' '  location / {' '    try_files $uri $uri/ /index.html;' '  }' '}' > "$CONF_DIR/default.conf"
 EXPOSE ${containerPort}
 CMD ["nginx", "-g", "daemon off;"]
 `;
@@ -130,12 +232,13 @@ function shouldUseStaticContainer(serviceType, frameworks) {
 function isLegacyGeneratedDockerfile(content) {
   return content.includes('RUN npm run build || true')
     || content.includes('COPY --chown=node:node --from=builder /app .')
+    || content.includes("RUN printf 'server {")
     || content === buildStaticDockerfile({ installCommand: 'npm install', buildCommand: '', containerPort: 80 }).replace(`${GENERATED_DOCKERFILE_MARKER}\n`, '');
 }
 
 async function isDockerAvailable() {
-  const result = await runCommand(DOCKER_CMD, ['info'], { timeout: 10000 });
-  return result.exitCode === 0;
+  const details = await getDockerAvailabilityDetails();
+  return details.available;
 }
 
 async function buildImage(appPath, imageName) {
@@ -251,24 +354,41 @@ async function generateDockerfile(appPath, serviceType, detectedFrameworks, buil
     }
   } catch {}
 
+  const hasPackageJson = fs.existsSync(path.join(appPath, 'package.json'));
   const installCommand = getInstallCommand(appPath);
   const resolvedContainerPort = containerPort || config.defaultContainerPort;
   const isStatic = shouldUseStaticContainer(serviceType, frameworks);
+
+  if (!hasPackageJson && !isStatic) {
+    throw new Error(
+      'No package.json found in this repository. ReHoster requires a package.json to build Node.js apps. ' +
+      'Add a package.json, or change the service type to "static" if this is a plain static site.'
+    );
+  }
+
+  // For static apps without package.json, avoid all npm steps.
+  // Only pass the build command through if the user explicitly set something non-npm.
+  const isNpmDefaultCmd = (cmd) => !cmd || /^\s*(npm (install|ci|run build)|yarn( build)?)\s*/.test(cmd);
   const resolvedBuildCommand = buildCommand && buildCommand.trim().length > 0
     ? buildCommand
-    : (isStatic ? 'npm run build' : null);
+    : (isStatic && hasPackageJson ? 'npm run build' : null);
   const resolvedStartCommand = startCommand && startCommand.trim().length > 0
     ? startCommand
     : 'npm start';
 
-  const content = isStatic
-    ? buildStaticDockerfile({ installCommand, buildCommand: resolvedBuildCommand, containerPort: resolvedContainerPort })
-    : buildNodeDockerfile({
-        installCommand,
-        buildCommand: resolvedBuildCommand,
-        startCommand: resolvedStartCommand,
+  const content = (!hasPackageJson && isStatic)
+    ? buildPureStaticDockerfile({
+        buildCommand: isNpmDefaultCmd(resolvedBuildCommand) ? null : resolvedBuildCommand,
         containerPort: resolvedContainerPort,
-      });
+      })
+    : isStatic
+      ? buildStaticDockerfile({ installCommand, buildCommand: resolvedBuildCommand, containerPort: resolvedContainerPort })
+      : buildNodeDockerfile({
+          installCommand,
+          buildCommand: resolvedBuildCommand,
+          startCommand: resolvedStartCommand,
+          containerPort: resolvedContainerPort,
+        });
 
   let shouldWrite = !fs.existsSync(dockerfilePath);
   if (!shouldWrite) {
@@ -287,6 +407,7 @@ async function removeImage(imageName) {
 
 module.exports = {
   isDockerAvailable,
+  getDockerAvailabilityDetails,
   getDockerCommandInfo,
   buildImage,
   runContainer,
