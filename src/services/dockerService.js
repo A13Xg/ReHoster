@@ -123,6 +123,32 @@ function getInstallCommand(appPath) {
   return fs.existsSync(path.join(appPath, 'package-lock.json')) ? 'npm ci' : 'npm install';
 }
 
+function readPackageScripts(appPath) {
+  const pkgPath = path.join(appPath, 'package.json');
+  if (!fs.existsSync(pkgPath)) return {};
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    return pkg && pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeBuildCommandForScripts(buildCommand, hasBuildScript) {
+  if (!buildCommand || buildCommand.trim().length === 0) return buildCommand;
+
+  const cmd = buildCommand.trim().toLowerCase();
+  const isDefaultLikeNodeBuild = cmd === 'npm run build'
+    || cmd === 'npm install && npm run build'
+    || cmd === 'npm ci && npm run build';
+
+  if (isDefaultLikeNodeBuild && !hasBuildScript) {
+    return null;
+  }
+
+  return buildCommand;
+}
+
 function buildNodeDockerfile({ installCommand, buildCommand, startCommand, containerPort }) {
   const dockerBuildCommand = buildCommand && buildCommand.trim().length > 0
     ? `RUN sh -lc ${JSON.stringify(buildCommand)}`
@@ -355,6 +381,8 @@ async function generateDockerfile(appPath, serviceType, detectedFrameworks, buil
   } catch {}
 
   const hasPackageJson = fs.existsSync(path.join(appPath, 'package.json'));
+  const packageScripts = readPackageScripts(appPath);
+  const hasBuildScript = typeof packageScripts.build === 'string' && packageScripts.build.trim().length > 0;
   const installCommand = getInstallCommand(appPath);
   const resolvedContainerPort = containerPort || config.defaultContainerPort;
   const isStatic = shouldUseStaticContainer(serviceType, frameworks);
@@ -369,9 +397,10 @@ async function generateDockerfile(appPath, serviceType, detectedFrameworks, buil
   // For static apps without package.json, avoid all npm steps.
   // Only pass the build command through if the user explicitly set something non-npm.
   const isNpmDefaultCmd = (cmd) => !cmd || /^\s*(npm (install|ci|run build)|yarn( build)?)\s*/.test(cmd);
-  const resolvedBuildCommand = buildCommand && buildCommand.trim().length > 0
+  const initialBuildCommand = buildCommand && buildCommand.trim().length > 0
     ? buildCommand
     : (isStatic && hasPackageJson ? 'npm run build' : null);
+  const resolvedBuildCommand = normalizeBuildCommandForScripts(initialBuildCommand, hasBuildScript);
   const resolvedStartCommand = startCommand && startCommand.trim().length > 0
     ? startCommand
     : 'npm start';
