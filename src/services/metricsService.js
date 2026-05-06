@@ -46,7 +46,7 @@ async function collectSystemMetrics() {
   const { diskUsedGb, diskTotalGb } = await getDiskUsage();
   const cpuPercent = Math.min(100, Math.round(cpuLoad * 100));
   db.prepare('INSERT INTO system_metrics (timestamp, cpu_percent, mem_used_mb, mem_total_mb, disk_used_gb, disk_total_gb) VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)').run(cpuPercent, memUsedMb, memTotalMb, diskUsedGb, diskTotalGb);
-  db.prepare("DELETE FROM system_metrics WHERE app_id IS NULL AND timestamp < datetime('now', '-7 days')").run();
+  db.prepare("DELETE FROM system_metrics WHERE timestamp < datetime('now', '-7 days')").run();
   return { cpuPercent, memUsedMb, memTotalMb, diskUsedGb, diskTotalGb };
 }
 
@@ -81,6 +81,7 @@ function getMetricsTimeseries(secondsBack = 3600) {
   const metrics = db.prepare(`
     SELECT 
       strftime('%Y-%m-%dT%H:%M:%S', timestamp) as time,
+      timestamp,
       cpu_percent,
       mem_used_mb,
       mem_total_mb,
@@ -94,6 +95,7 @@ function getMetricsTimeseries(secondsBack = 3600) {
   
   return {
     times: metrics.map(m => m.time),
+    timestamps: metrics.map(m => m.timestamp),
     cpu: metrics.map(m => m.cpu_percent),
     memUsed: metrics.map(m => m.mem_used_mb),
     memTotal: metrics.length > 0 ? metrics[0].mem_total_mb : 0,

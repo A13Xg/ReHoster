@@ -38,6 +38,21 @@
         </select>
         <small class="form-hint">Used for date/time formatting across the panel.</small>
       </div>
+      <div class="form-group">
+        <label class="form-label">Timezone</label>
+        <select class="form-input" name="timezone">
+          <option value="UTC" <%= (settings.timezone || 'UTC') === 'UTC' ? 'selected' : '' %>>UTC</option>
+          <option value="America/New_York" <%= settings.timezone === 'America/New_York' ? 'selected' : '' %>>America/New_York</option>
+          <option value="America/Chicago" <%= settings.timezone === 'America/Chicago' ? 'selected' : '' %>>America/Chicago</option>
+          <option value="America/Denver" <%= settings.timezone === 'America/Denver' ? 'selected' : '' %>>America/Denver</option>
+          <option value="America/Los_Angeles" <%= settings.timezone === 'America/Los_Angeles' ? 'selected' : '' %>>America/Los_Angeles</option>
+          <option value="Europe/London" <%= settings.timezone === 'Europe/London' ? 'selected' : '' %>>Europe/London</option>
+          <option value="Europe/Berlin" <%= settings.timezone === 'Europe/Berlin' ? 'selected' : '' %>>Europe/Berlin</option>
+          <option value="Asia/Tokyo" <%= settings.timezone === 'Asia/Tokyo' ? 'selected' : '' %>>Asia/Tokyo</option>
+          <option value="Australia/Sydney" <%= settings.timezone === 'Australia/Sydney' ? 'selected' : '' %>>Australia/Sydney</option>
+        </select>
+        <small class="form-hint">Used together with locale for all displayed timestamps.</small>
+      </div>
     </div>
   </div>
 

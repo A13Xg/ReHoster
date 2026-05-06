@@ -40,7 +40,7 @@ router.get('/admin/settings', async (req, res, next) => {
 router.post('/admin/settings', (req, res, next) => {
   try {
     const allowed = [
-      'theme', 'panel_name', 'locale', 'auto_update_check', 'auto_update_interval',
+      'theme', 'panel_name', 'locale', 'timezone', 'auto_update_check', 'auto_update_interval',
       'port_range_start', 'port_range_end', 'docker_restart_policy',
       'analytics_retention_days', 'log_retention_days',
     ];
@@ -74,7 +74,7 @@ router.post('/admin/settings/import', express.json(), (req, res, next) => {
     const body = req.body;
     if (!body || typeof body !== 'object') throw new Error('Invalid JSON');
     const allowed = [
-      'theme', 'panel_name', 'locale', 'auto_update_check', 'auto_update_interval',
+      'theme', 'panel_name', 'locale', 'timezone', 'auto_update_check', 'auto_update_interval',
       'port_range_start', 'port_range_end', 'docker_restart_policy',
       'analytics_retention_days', 'log_retention_days',
     ];
