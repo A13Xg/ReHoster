@@ -11,6 +11,7 @@ const config = require('../config/env');
 const DEFAULT_SETTINGS = {
   theme: 'dark',
   panel_name: 'ReHoster',
+  locale: config.locale || 'en-US',
   auto_update_check: '1',
   auto_update_interval: '24',
   port_range_start: '4000',

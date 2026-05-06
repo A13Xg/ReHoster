@@ -48,7 +48,7 @@
                 <% } else { %><span class="health-dot health-unknown"></span> Unknown<% } %>
               </td>
               <td><code><%= app.port %></code></td>
-              <td class="text-muted"><%= app.last_health_check ? new Date(app.last_health_check).toLocaleString() : '—' %></td>
+              <td class="text-muted"><%= formatDate(app.last_health_check) %></td>
             </tr>
           <% }) %>
         </tbody>
@@ -56,7 +56,7 @@
     <% } %>
   </div>
 
-  <p class="text-muted" style="margin-top:1rem;text-align:center;font-size:0.8rem;">Updated: <%= timestamp %></p>
+  <p class="text-muted" style="margin-top:1rem;text-align:center;font-size:0.8rem;">Updated: <%= formatDate(timestamp) %></p>
 </div>
 </body>
 </html>

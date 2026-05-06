@@ -23,7 +23,7 @@
     <% } else { %>
       <% dbLogs.slice().reverse().forEach(function(log) { %>
         <div class="log-line log-<%= log.level %>" data-log-id="<%= log.id %>">
-          <span class="log-time"><%= new Date(log.created_at).toLocaleString() %></span>
+          <span class="log-time"><%= formatDate(log.created_at) %></span>
           <span class="log-level">[<%= log.level.toUpperCase() %>]</span>
           <span class="log-msg"><%= log.message %></span>
         </div>

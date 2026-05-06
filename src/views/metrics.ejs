@@ -33,7 +33,7 @@
         <tbody>
           <% systemMetrics.slice(0,20).forEach(function(m) { %>
             <tr>
-              <td class="text-muted"><%= new Date(m.timestamp).toLocaleString() %></td>
+              <td class="text-muted"><%= formatDate(m.timestamp) %></td>
               <td><%= m.cpu_percent %>%</td>
               <td><%= m.mem_used_mb %> MB</td>
               <td><%= m.mem_total_mb %> MB</td>

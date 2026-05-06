@@ -78,7 +78,7 @@
               <% } %>
             </td>
             <td class="text-muted">
-              <%= app.last_deployed_at ? new Date(app.last_deployed_at).toLocaleString() : '—' %>
+              <%= formatDate(app.last_deployed_at) %>
             </td>
             <td class="actions-cell">
               <a href="/admin/apps/<%= app.id %>" class="btn btn-sm btn-secondary">View</a>

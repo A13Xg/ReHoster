@@ -54,7 +54,7 @@
             <td><strong><%= app.name %></strong></td>
             <td><%- include('../partials/status-badge', {status: app.status}) %></td>
             <td><code><%= app.port %></code></td>
-            <td><%= app.last_deployed_at ? new Date(app.last_deployed_at).toLocaleString() : '—' %></td>
+            <td><%= formatDate(app.last_deployed_at) %></td>
             <td>
               <a href="/admin/apps/<%= app.id %>" class="btn btn-sm btn-secondary">View</a>
             </td>

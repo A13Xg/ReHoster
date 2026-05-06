@@ -26,6 +26,35 @@
           <option value="light" <%= settings.theme === 'light' ? 'selected' : '' %>>Light</option>
         </select>
       </div>
+      <div class="form-group">
+        <label class="form-label">Locale</label>
+        <select class="form-input" name="locale">
+          <option value="en-US" <%= (settings.locale || 'en-US') === 'en-US' ? 'selected' : '' %>>English (US)</option>
+          <option value="en-GB" <%= settings.locale === 'en-GB' ? 'selected' : '' %>>English (UK)</option>
+          <option value="de-DE" <%= settings.locale === 'de-DE' ? 'selected' : '' %>>German (DE)</option>
+          <option value="fr-FR" <%= settings.locale === 'fr-FR' ? 'selected' : '' %>>French (FR)</option>
+          <option value="es-ES" <%= settings.locale === 'es-ES' ? 'selected' : '' %>>Spanish (ES)</option>
+          <option value="ja-JP" <%= settings.locale === 'ja-JP' ? 'selected' : '' %>>Japanese (JP)</option>
+        </select>
+        <small class="form-hint">Used for date/time formatting across the panel.</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header"><h2>Time Server</h2></div>
+    <div style="padding:1rem;">
+      <% if (networkTime) { %>
+        <p><strong>Network UTC Time:</strong> <%= formatDate(networkTime) %></p>
+        <p class="text-muted" style="font-size:0.85rem;">Source: <%= networkTimeSource %></p>
+      <% } else { %>
+        <p class="text-muted">Unable to fetch network time right now.</p>
+      <% } %>
+      <% if (timeError) { %>
+        <div class="alert alert-warning" style="margin-top:0.75rem;">
+          Time server check failed: <%= timeError %>
+        </div>
+      <% } %>
     </div>
   </div>
 

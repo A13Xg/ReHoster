@@ -14,6 +14,7 @@ function requireEnv(name, defaultValue) {
 const config = {
   nodeEnv: requireEnv('NODE_ENV', 'development'),
   port: parseInt(requireEnv('PORT', '3000'), 10),
+  locale: requireEnv('LOCALE', 'en-US'),
   sessionSecret: requireEnv('SESSION_SECRET', 'dev-secret-change-in-production'),
   adminUsername: requireEnv('ADMIN_USERNAME', 'Admin'),
   adminPassword: requireEnv('ADMIN_PASSWORD', 'ReHostPassword'),
