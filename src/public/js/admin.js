@@ -5,6 +5,25 @@ const STATUS_INTERVAL = 8000;
 const LOG_INTERVAL = 2500;
 const COUNTER_DURATION = 1000;
 
+function getStatusDisplay(status) {
+  const value = String(status || 'unknown').toLowerCase();
+  const icons = {
+    running: '●',
+    stopped: '■',
+    failed: '✕',
+    creating: '◌',
+    cloning: '↧',
+    building: '⌛',
+    staging: '◔',
+    restarting: '↺',
+    unknown: '?'
+  };
+  return {
+    value,
+    icon: icons[value] || icons.unknown
+  };
+}
+
 function initStatusPolling() {
   const cells = document.querySelectorAll('[data-app-id]');
   if (!cells.length) return;
@@ -17,12 +36,15 @@ function initStatusPolling() {
         .then(data => {
           const badge = cell.querySelector('.badge');
           if (badge && data.status) {
-            badge.textContent = data.status;
-            badge.className = `badge badge-${data.status}`;
-            const isPulse = data.status === 'running';
-            const isShake = data.status === 'failed';
+            const statusMeta = getStatusDisplay(data.status);
+            const isPulse = statusMeta.value === 'running';
+            const isShake = statusMeta.value === 'failed';
+            const isWorking = ['creating', 'cloning', 'building', 'staging', 'restarting'].includes(statusMeta.value);
+            badge.className = `badge badge-${statusMeta.value}`;
             badge.classList.toggle('badge-pulse', isPulse);
             badge.classList.toggle('badge-shake', isShake);
+            badge.classList.toggle('badge-working', isWorking);
+            badge.innerHTML = `<span class="badge-icon">${statusMeta.icon}</span>${statusMeta.value}`;
           }
           const portEl = cell.querySelector('.port-display');
           if (portEl && data.port) portEl.textContent = `:${data.port}`;

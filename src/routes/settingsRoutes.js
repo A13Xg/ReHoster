@@ -27,8 +27,6 @@ router.post('/admin/settings', (req, res, next) => {
       'theme', 'panel_name', 'auto_update_check', 'auto_update_interval',
       'port_range_start', 'port_range_end', 'docker_restart_policy',
       'analytics_retention_days', 'log_retention_days',
-      'maintenance_title', 'maintenance_message',
-      'maintenance_bg_color', 'maintenance_text_color',
     ];
     const updates = {};
     for (const key of allowed) {
@@ -63,8 +61,6 @@ router.post('/admin/settings/import', express.json(), (req, res, next) => {
       'theme', 'panel_name', 'auto_update_check', 'auto_update_interval',
       'port_range_start', 'port_range_end', 'docker_restart_policy',
       'analytics_retention_days', 'log_retention_days',
-      'maintenance_title', 'maintenance_message',
-      'maintenance_bg_color', 'maintenance_text_color',
     ];
     const updates = {};
     for (const key of allowed) {

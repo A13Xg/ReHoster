@@ -16,8 +16,16 @@ function getAppLogs(appId, limit = 200) {
     .all(appId, limit);
 }
 
+function getAppLogsSince(appId, sinceId = 0, limit = 200) {
+  return db
+    .prepare(
+      'SELECT id, level, message, created_at FROM app_logs WHERE app_id = ? AND id > ? ORDER BY id ASC LIMIT ?'
+    )
+    .all(appId, sinceId, limit);
+}
+
 function clearAppLogs(appId) {
   db.prepare('DELETE FROM app_logs WHERE app_id = ?').run(appId);
 }
 
-module.exports = { addLog, getAppLogs, clearAppLogs };
+module.exports = { addLog, getAppLogs, getAppLogsSince, clearAppLogs };

@@ -15,6 +15,13 @@ const DEFAULT_DOCKERIGNORE = `node_modules
 npm-debug.log
 `;
 
+function getPrereqInstallerPath() {
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  return process.platform === 'win32'
+    ? path.join(repoRoot, 'install-prereqs.ps1')
+    : path.join(repoRoot, 'install-prereqs.sh');
+}
+
 function resolveDockerCommand() {
   const envOverride = process.env.DOCKER_CMD && process.env.DOCKER_CMD.trim();
   if (envOverride) {
@@ -51,6 +58,34 @@ function getDockerCommandInfo() {
     isAbsolute,
     existsOnDisk: isAbsolute ? fs.existsSync(DOCKER_CMD) : null,
     envOverride: process.env.DOCKER_CMD || null,
+  };
+}
+
+function analyzeDependencyManifests(appPath) {
+  const hasPackageJson = fs.existsSync(path.join(appPath, 'package.json'));
+  const hasPackageLock = fs.existsSync(path.join(appPath, 'package-lock.json'));
+  const hasYarnLock = fs.existsSync(path.join(appPath, 'yarn.lock'));
+  const hasPnpmLock = fs.existsSync(path.join(appPath, 'pnpm-lock.yaml'));
+  const hasRequirementsTxt = fs.existsSync(path.join(appPath, 'requirements.txt'));
+  const hasPyproject = fs.existsSync(path.join(appPath, 'pyproject.toml'));
+  const hasPipfile = fs.existsSync(path.join(appPath, 'Pipfile'));
+
+  let packageManager = null;
+  if (hasPnpmLock) packageManager = 'pnpm';
+  else if (hasYarnLock) packageManager = 'yarn';
+  else if (hasPackageJson) packageManager = 'npm';
+
+  return {
+    hasPackageJson,
+    hasPackageLock,
+    hasYarnLock,
+    hasPnpmLock,
+    hasRequirementsTxt,
+    hasPyproject,
+    hasPipfile,
+    packageManager,
+    hasLockfile: hasPackageLock || hasYarnLock || hasPnpmLock,
+    hasPythonManifest: hasRequirementsTxt || hasPyproject || hasPipfile,
   };
 }
 
@@ -119,8 +154,77 @@ async function getDockerAvailabilityDetails() {
   };
 }
 
-function getInstallCommand(appPath) {
-  return fs.existsSync(path.join(appPath, 'package-lock.json')) ? 'npm ci' : 'npm install';
+function getNodeInstallPlan(appPath) {
+  const manifests = analyzeDependencyManifests(appPath);
+
+  if (manifests.hasPnpmLock) {
+    return {
+      manager: 'pnpm',
+      setupCommand: 'corepack enable && corepack prepare pnpm@latest --activate',
+      installCommand: 'pnpm install --frozen-lockfile',
+      productionInstallCommand: 'pnpm install --frozen-lockfile --prod',
+    };
+  }
+
+  if (manifests.hasYarnLock) {
+    return {
+      manager: 'yarn',
+      setupCommand: 'corepack enable && corepack prepare yarn@stable --activate',
+      installCommand: 'yarn install --frozen-lockfile',
+      productionInstallCommand: 'yarn install --frozen-lockfile --production=true',
+    };
+  }
+
+  return {
+    manager: 'npm',
+    setupCommand: null,
+    installCommand: manifests.hasPackageLock ? 'npm ci' : 'npm install',
+    productionInstallCommand: manifests.hasPackageLock ? 'npm ci --omit=dev' : 'npm install --omit=dev',
+  };
+}
+
+function getPythonDependencyInstallCommand(appPath) {
+  const manifests = analyzeDependencyManifests(appPath);
+
+  if (manifests.hasRequirementsTxt) {
+    return 'if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi';
+  }
+
+  if (manifests.hasPyproject) {
+    return 'if [ -f pyproject.toml ] && [ -f poetry.lock ]; then pip install --no-cache-dir poetry && poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi --only main; elif [ -f pyproject.toml ]; then pip install --no-cache-dir .; fi';
+  }
+
+  if (manifests.hasPipfile) {
+    return 'if [ -f Pipfile ]; then pip install --no-cache-dir pipenv && PIPENV_VENV_IN_PROJECT=0 pipenv install --system --deploy; fi';
+  }
+
+  return null;
+}
+
+async function attemptDockerAutoRepair() {
+  const installerPath = getPrereqInstallerPath();
+  if (!fs.existsSync(installerPath)) {
+    return { attempted: false, success: false, output: 'Prerequisite installer script not found.' };
+  }
+
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const command = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+  const args = process.platform === 'win32'
+    ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', installerPath]
+    : [installerPath];
+
+  const result = await runCommand(command, args, {
+    cwd: repoRoot,
+    timeout: 15 * 60 * 1000,
+  });
+
+  const verify = await getDockerAvailabilityDetails();
+  return {
+    attempted: true,
+    success: verify.available,
+    output: [result.stdout, result.stderr].filter(Boolean).join('\n').trim(),
+    verify,
+  };
 }
 
 function readPackageScripts(appPath) {
@@ -149,27 +253,31 @@ function normalizeBuildCommandForScripts(buildCommand, hasBuildScript) {
   return buildCommand;
 }
 
-function buildNodeDockerfile({ installCommand, buildCommand, startCommand, containerPort }) {
+function buildNodeDockerfile({ setupCommand, installCommand, productionInstallCommand, pythonInstallCommand, buildCommand, startCommand, containerPort }) {
   const dockerBuildCommand = buildCommand && buildCommand.trim().length > 0
     ? `RUN sh -lc ${JSON.stringify(buildCommand)}`
     : '';
 
+  const setupLine = setupCommand ? `RUN ${setupCommand}` : '';
+  const pythonLine = pythonInstallCommand ? `RUN ${pythonInstallCommand}` : '';
+
   return `${GENERATED_DOCKERFILE_MARKER}
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY --chown=node:node package*.json ./
-RUN ${installCommand}
 COPY --chown=node:node . .
+${setupLine}
+RUN ${installCommand}
 ${dockerBuildCommand}
 
 FROM node:20-alpine AS production
 WORKDIR /app
-COPY --chown=node:node package*.json ./
-RUN ${installCommand} --omit=dev
 COPY --chown=node:node --from=builder /app .
+${setupLine}
+RUN ${productionInstallCommand}
 RUN apk add --no-cache python3 py3-pip && ln -sf /usr/bin/python3 /usr/bin/python \
   && python3 -m venv /opt/venv \
   && chown -R node:node /opt/venv
+${pythonLine}
 RUN mkdir -p /app/output /app/cache && chown -R node:node /app
 ENV VIRTUAL_ENV=/opt/venv
 ENV PYTHONUSERBASE=/opt/venv
@@ -183,17 +291,19 @@ CMD ["sh", "-lc", ${JSON.stringify(startCommand)}]
 `;
 }
 
-function buildStaticDockerfile({ installCommand, buildCommand, containerPort }) {
+function buildStaticDockerfile({ setupCommand, installCommand, buildCommand, containerPort }) {
   const dockerBuildCommand = buildCommand && buildCommand.trim().length > 0
     ? buildCommand
     : 'npm run build';
 
+  const setupLine = setupCommand ? `RUN ${setupCommand}` : '';
+
   return `${GENERATED_DOCKERFILE_MARKER}
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY --chown=node:node package*.json ./
-RUN ${installCommand}
 COPY --chown=node:node . .
+${setupLine}
+RUN ${installCommand}
 RUN sh -lc ${JSON.stringify(dockerBuildCommand)}
 RUN mkdir -p /site && \
   if [ -d dist ]; then cp -R dist/. /site/; \
@@ -294,10 +404,20 @@ async function isDockerAvailable() {
 }
 
 async function buildImage(appPath, imageName) {
-  const result = await runCommand(DOCKER_CMD, ['build', '-t', imageName, appPath], {
+  const baseArgs = ['build', '-t', imageName, appPath];
+  let result = await runCommand(DOCKER_CMD, baseArgs, {
     cwd: appPath,
     timeout: 10 * 60 * 1000,
   });
+
+  if (result.exitCode !== 0) {
+    // One fallback retry with --pull to recover from stale base image metadata.
+    result = await runCommand(DOCKER_CMD, ['build', '--pull', '-t', imageName, appPath], {
+      cwd: appPath,
+      timeout: 12 * 60 * 1000,
+    });
+  }
+
   if (result.exitCode !== 0) {
     const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     throw new Error(`Docker build failed:\n${output || `Exit code ${result.exitCode}`}`);
@@ -406,10 +526,12 @@ async function generateDockerfile(appPath, serviceType, detectedFrameworks, buil
     }
   } catch {}
 
-  const hasPackageJson = fs.existsSync(path.join(appPath, 'package.json'));
+  const manifestReport = analyzeDependencyManifests(appPath);
+  const hasPackageJson = manifestReport.hasPackageJson;
   const packageScripts = readPackageScripts(appPath);
   const hasBuildScript = typeof packageScripts.build === 'string' && packageScripts.build.trim().length > 0;
-  const installCommand = getInstallCommand(appPath);
+  const installPlan = getNodeInstallPlan(appPath);
+  const pythonInstallCommand = getPythonDependencyInstallCommand(appPath);
   const resolvedContainerPort = containerPort || config.defaultContainerPort;
   const isStatic = shouldUseStaticContainer(serviceType, frameworks);
 
@@ -437,9 +559,12 @@ async function generateDockerfile(appPath, serviceType, detectedFrameworks, buil
         containerPort: resolvedContainerPort,
       })
     : isStatic
-      ? buildStaticDockerfile({ installCommand, buildCommand: resolvedBuildCommand, containerPort: resolvedContainerPort })
+      ? buildStaticDockerfile({ setupCommand: installPlan.setupCommand, installCommand: installPlan.installCommand, buildCommand: resolvedBuildCommand, containerPort: resolvedContainerPort })
       : buildNodeDockerfile({
-          installCommand,
+          setupCommand: installPlan.setupCommand,
+          installCommand: installPlan.installCommand,
+          productionInstallCommand: installPlan.productionInstallCommand,
+          pythonInstallCommand,
           buildCommand: resolvedBuildCommand,
           startCommand: resolvedStartCommand,
           containerPort: resolvedContainerPort,
@@ -462,6 +587,8 @@ async function removeImage(imageName) {
 
 module.exports = {
   isDockerAvailable,
+  attemptDockerAutoRepair,
+  analyzeDependencyManifests,
   getDockerAvailabilityDetails,
   getDockerCommandInfo,
   buildImage,

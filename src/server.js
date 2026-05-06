@@ -67,6 +67,28 @@ async function main() {
     } catch {}
   }, 5 * 60 * 1000);
 
+  // Conservative automatic repo update checks.
+  try {
+    const settingsService = require('./services/settingsService');
+    const autoUpdateEnabled = settingsService.getSetting('auto_update_check', '1') !== '0';
+    const configuredHours = parseInt(settingsService.getSetting('auto_update_interval', '24'), 10) || 24;
+    const intervalHours = Math.max(configuredHours, 24);
+
+    if (autoUpdateEnabled) {
+      setInterval(async () => {
+        try {
+          const appService = require('./services/appService');
+          await appService.checkForRepoUpdates();
+        } catch {}
+      }, intervalHours * 60 * 60 * 1000);
+      logger.info(`Automatic repo update checks enabled every ${intervalHours} hour(s)`);
+    } else {
+      logger.info('Automatic repo update checks disabled');
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to configure automatic repo update checks');
+  }
+
   app.listen(config.port, () => {
     logger.info(`ReHoster panel running on port ${config.port} [${config.nodeEnv}]`);
     logger.info(`Open: http://localhost:${config.port}`);

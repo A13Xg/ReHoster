@@ -3,10 +3,10 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Logs — <%= app.name %></h1>
-    <%- include('../partials/status-badge', {status: app.status}) %>
+    <span id="appStatusBadge"><%- include('../partials/status-badge', {status: app.status}) %></span>
   </div>
   <div class="header-actions">
-    <button class="btn btn-secondary" id="autoRefreshBtn" onclick="toggleAutoRefresh()">⟳ Auto-Refresh: OFF</button>
+    <button class="btn btn-secondary btn-active" id="autoRefreshBtn" onclick="toggleAutoRefresh()">⟳ Auto-Refresh: ON (3s)</button>
     <button class="btn btn-secondary" onclick="location.reload()">↺ Refresh Now</button>
     <a href="/admin/apps/<%= app.id %>" class="btn btn-secondary">← Back to App</a>
   </div>
@@ -15,21 +15,21 @@
 <div class="card">
   <div class="card-header">
     <h2>Deployment Logs</h2>
-    <span class="text-muted"><%= dbLogs ? dbLogs.length : 0 %> entries</span>
+    <span class="text-muted" id="deployLogsCount"><%= dbLogs ? dbLogs.length : 0 %> entries</span>
   </div>
-  <% if (!dbLogs || dbLogs.length === 0) { %>
-    <div class="empty-state"><p>No deployment logs yet.</p></div>
-  <% } else { %>
-    <div class="log-viewer" id="deployLogs">
-      <% dbLogs.forEach(function(log) { %>
-        <div class="log-line log-<%= log.level %>">
+  <div class="log-viewer" id="deployLogs">
+    <% if (!dbLogs || dbLogs.length === 0) { %>
+      <div class="log-line"><span class="log-msg text-muted">No deployment logs yet.</span></div>
+    <% } else { %>
+      <% dbLogs.slice().reverse().forEach(function(log) { %>
+        <div class="log-line log-<%= log.level %>" data-log-id="<%= log.id %>">
           <span class="log-time"><%= new Date(log.created_at).toLocaleString() %></span>
           <span class="log-level">[<%= log.level.toUpperCase() %>]</span>
           <span class="log-msg"><%= log.message %></span>
         </div>
       <% }) %>
-    </div>
-  <% } %>
+    <% } %>
+  </div>
 </div>
 
 <div class="card" style="margin-top: 1.5rem;">
@@ -37,21 +37,162 @@
     <h2>Container Runtime Logs</h2>
     <small class="text-muted">Last 200 lines from <code><%= app.container_name %></code></small>
   </div>
-  <% if (!dockerLogs || dockerLogs.trim().length === 0) { %>
-    <div class="empty-state"><p>No container logs available. Container may not be running.</p></div>
-  <% } else { %>
-    <div class="log-viewer log-viewer-docker" id="dockerLogs">
+  <div class="log-viewer log-viewer-docker" id="dockerLogs">
+    <% if (!dockerLogs || dockerLogs.trim().length === 0) { %>
+      <div class="log-line"><span class="log-msg text-muted">No container logs available. Container may not be running.</span></div>
+    <% } else { %>
       <% dockerLogs.split('\n').forEach(function(line) { %>
         <% if (line.trim()) { %>
           <div class="log-line"><span class="log-msg"><%= line %></span></div>
         <% } %>
       <% }) %>
-    </div>
-  <% } %>
+    <% } %>
+  </div>
 </div>
 
 <script>
   var autoRefreshInterval = null;
+  var appId = <%= app.id %>;
+  var lastDeployLogId = 0;
+
+  function getStatusMeta(status) {
+    var value = String(status || 'unknown').toLowerCase();
+    var icons = {
+      running: '●',
+      stopped: '■',
+      failed: '✕',
+      creating: '◌',
+      cloning: '↧',
+      building: '⌛',
+      staging: '◔',
+      restarting: '↺',
+      unknown: '?'
+    };
+    return { value: value, icon: icons[value] || icons.unknown };
+  }
+
+  function renderStatusBadge(status) {
+    var meta = getStatusMeta(status);
+    var working = ['creating', 'cloning', 'building', 'staging', 'restarting'].indexOf(meta.value) >= 0 ? ' badge-working' : '';
+    var pulse = meta.value === 'running' ? ' badge-pulse' : '';
+    var shake = meta.value === 'failed' ? ' badge-shake' : '';
+    return '<span class="badge badge-' + meta.value + pulse + shake + working + '" data-status="' + meta.value + '"><span class="badge-icon">' + meta.icon + '</span>' + meta.value + '</span>';
+  }
+
+  function scrollToBottom(el) {
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function updateDeployLogs(dbLogs, replaceAll) {
+    var container = document.getElementById('deployLogs');
+    var count = document.getElementById('deployLogsCount');
+    if (!container || !count) return;
+
+    var logs = Array.isArray(dbLogs) ? dbLogs : [];
+    if (replaceAll) {
+      container.innerHTML = '';
+    }
+
+    if (!logs.length && replaceAll) {
+      count.textContent = '0 entries';
+      var emptyLine = document.createElement('div');
+      emptyLine.className = 'log-line';
+      var emptyMsg = document.createElement('span');
+      emptyMsg.className = 'log-msg text-muted';
+      emptyMsg.textContent = 'No deployment logs yet.';
+      emptyLine.appendChild(emptyMsg);
+      container.appendChild(emptyLine);
+      return;
+    }
+
+    if (!replaceAll) {
+      var empty = container.querySelector('.log-msg.text-muted');
+      if (empty && empty.textContent.indexOf('No deployment logs yet.') >= 0) {
+        container.innerHTML = '';
+      }
+    }
+
+    var currentCount = container.querySelectorAll('[data-log-id]').length;
+
+    logs.forEach(function(log) {
+      if (!replaceAll && log.id <= lastDeployLogId) return;
+      var line = document.createElement('div');
+      line.className = 'log-line log-' + (log.level || 'info');
+      line.setAttribute('data-log-id', String(log.id || '0'));
+
+      var time = document.createElement('span');
+      time.className = 'log-time';
+      time.textContent = log.created_at ? new Date(log.created_at).toLocaleString() : '';
+
+      var level = document.createElement('span');
+      level.className = 'log-level';
+      level.textContent = '[' + String(log.level || 'info').toUpperCase() + ']';
+
+      var msg = document.createElement('span');
+      msg.className = 'log-msg';
+      msg.textContent = log.message || '';
+
+      line.appendChild(time);
+      line.appendChild(level);
+      line.appendChild(msg);
+      container.appendChild(line);
+
+      if (log.id && log.id > lastDeployLogId) {
+        lastDeployLogId = log.id;
+      }
+      currentCount += 1;
+    });
+
+    count.textContent = currentCount + ' entries';
+    scrollToBottom(container);
+  }
+
+  function updateDockerLogs(rawLogs) {
+    var container = document.getElementById('dockerLogs');
+    if (!container) return;
+    container.innerHTML = '';
+
+    var lines = String(rawLogs || '').split('\n').filter(function(line) { return line.trim().length > 0; });
+    if (!lines.length) {
+      var emptyLine = document.createElement('div');
+      emptyLine.className = 'log-line';
+      var emptyMsg = document.createElement('span');
+      emptyMsg.className = 'log-msg text-muted';
+      emptyMsg.textContent = 'No container logs available. Container may not be running.';
+      emptyLine.appendChild(emptyMsg);
+      container.appendChild(emptyLine);
+      return;
+    }
+
+    lines.forEach(function(lineText) {
+      var line = document.createElement('div');
+      line.className = 'log-line';
+      var msg = document.createElement('span');
+      msg.className = 'log-msg';
+      msg.textContent = lineText;
+      line.appendChild(msg);
+      container.appendChild(line);
+    });
+
+    scrollToBottom(container);
+  }
+
+  function pollLogs() {
+    var url = '/admin/apps/' + appId + '/logs/data?since=' + encodeURIComponent(String(lastDeployLogId || 0));
+    fetch(url, { credentials: 'same-origin' })
+      .then(function(r) {
+        if (!r.ok) throw new Error('Failed to fetch logs');
+        return r.json();
+      })
+      .then(function(data) {
+        document.getElementById('appStatusBadge').innerHTML = renderStatusBadge(data.status || 'unknown');
+        updateDeployLogs(data.dbLogs || [], false);
+        updateDockerLogs(data.dockerLogs || '');
+      })
+      .catch(function() {});
+  }
+
   function toggleAutoRefresh() {
     var btn = document.getElementById('autoRefreshBtn');
     if (autoRefreshInterval) {
@@ -60,15 +201,29 @@
       btn.textContent = '⟳ Auto-Refresh: OFF';
       btn.classList.remove('btn-active');
     } else {
-      autoRefreshInterval = setInterval(function() { location.reload(); }, 5000);
-      btn.textContent = '⟳ Auto-Refresh: ON (5s)';
+      autoRefreshInterval = setInterval(pollLogs, 3000);
+      btn.textContent = '⟳ Auto-Refresh: ON (3s)';
       btn.classList.add('btn-active');
+      pollLogs();
     }
   }
+
+  autoRefreshInterval = setInterval(pollLogs, 3000);
+
   // Scroll log viewers to bottom
   document.querySelectorAll('.log-viewer').forEach(function(el) {
     el.scrollTop = el.scrollHeight;
   });
+
+  (function initLogState() {
+    var logRows = document.querySelectorAll('#deployLogs [data-log-id]');
+    var count = logRows.length;
+    for (var i = 0; i < count; i += 1) {
+      var idVal = Number(logRows[i].getAttribute('data-log-id') || '0');
+      if (idVal > lastDeployLogId) lastDeployLogId = idVal;
+    }
+    document.getElementById('deployLogsCount').textContent = count + ' entries';
+  })();
 </script>
 
 <%- include('../partials/footer') %>

@@ -69,6 +69,8 @@
             <td>
               <% if (app.health_status === 'healthy') { %>
                 <span class="health-dot health-healthy" title="Healthy"></span>
+              <% } else if (app.health_status === 'degraded') { %>
+                <span class="health-dot health-degraded" title="Degraded"></span>
               <% } else if (app.health_status === 'unhealthy') { %>
                 <span class="health-dot health-unhealthy" title="Unhealthy"></span>
               <% } else { %>

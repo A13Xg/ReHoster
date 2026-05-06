@@ -11,6 +11,46 @@ const { safeJoin } = require('../utils/paths');
 
 const router = express.Router();
 
+const MAX_EDIT_FILE_BYTES = 50 * 1024 * 1024;
+const TEXT_EXTENSIONS = new Set([
+  '.txt', '.md', '.markdown', '.json', '.jsonc', '.yml', '.yaml', '.toml', '.ini', '.env',
+  '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.css', '.scss', '.sass', '.less', '.html', '.htm',
+  '.xml', '.svg', '.sql', '.py', '.rb', '.php', '.java', '.c', '.h', '.cpp', '.hpp', '.cs', '.go',
+  '.rs', '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd', '.dockerfile', '.conf', '.config', '.ejs',
+]);
+
+function normalizeRelPath(inputPath) {
+  return String(inputPath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+function isTextFilePath(filePath) {
+  const lowerBase = path.basename(filePath).toLowerCase();
+  if (lowerBase === 'dockerfile' || lowerBase === '.env') return true;
+  const ext = path.extname(filePath).toLowerCase();
+  if (TEXT_EXTENSIONS.has(ext)) return true;
+
+  try {
+    const handle = fs.openSync(filePath, 'r');
+    const buffer = Buffer.alloc(2048);
+    const bytesRead = fs.readSync(handle, buffer, 0, buffer.length, 0);
+    fs.closeSync(handle);
+    for (let i = 0; i < bytesRead; i += 1) {
+      if (buffer[i] === 0) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeNewName(name) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return null;
+  if (trimmed === '.' || trimmed === '..') return null;
+  if (trimmed.includes('/') || trimmed.includes('\\')) return null;
+  return trimmed;
+}
+
 router.use(requireAuth);
 
 router.get('/admin/apps/new', (req, res) => {
@@ -53,6 +93,10 @@ router.get('/admin/apps/:id', (req, res, next) => {
     try { frameworks = app.detected_frameworks ? JSON.parse(app.detected_frameworks) : []; } catch {}
     const groups = appService.getAllGroups();
     const group = groups.find((g) => g.id === app.group_id) || null;
+    const envVarsText = appService.getEnvVarsTextForApp(app);
+    const webhookUrl = appService.getWebhookUrlForApp(app);
+    const envUpdated = String(req.query.envUpdated || '') === '1';
+    const envApplyNow = String(req.query.envApplyNow || '') === '1';
     res.render('apps/show', {
       title: app.name,
       app,
@@ -60,7 +104,30 @@ router.get('/admin/apps/:id', (req, res, next) => {
       baseHost: config.baseHost,
       frameworks,
       group,
+      envVarsText,
+      webhookUrl,
+      envUpdated,
+      envApplyNow,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/admin/apps/:id/env', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const applyNow = String(req.body.applyNow || '') === '1';
+    appService.updateAppEnvVars(id, req.body.envVars || '');
+
+    if (applyNow) {
+      appService.rebuildApp(id).catch((err) => {
+        logService.addLog(id, 'error', `Background env apply rebuild failed: ${err.message}`);
+        console.error(`Background env apply rebuild error for app ${id}:`, err.message);
+      });
+    }
+
+    return res.redirect(`/admin/apps/${id}?envUpdated=1${applyNow ? '&envApplyNow=1' : ''}`);
   } catch (err) {
     next(err);
   }
@@ -135,6 +202,26 @@ router.get('/admin/apps/:id/logs', async (req, res, next) => {
   }
 });
 
+router.get('/admin/apps/:id/logs/data', async (req, res, next) => {
+  try {
+    const app = appService.getApp(Number(req.params.id));
+    if (!app) return res.status(404).json({ error: 'Not found' });
+    const sinceId = Number(req.query.since || 0);
+    const { dockerLogs } = await appService.getAppLogs(app.id);
+    const dbLogs = Number.isFinite(sinceId) && sinceId > 0
+      ? logService.getAppLogsSince(app.id, sinceId, 200)
+      : logService.getAppLogs(app.id, 200).slice().reverse();
+    return res.json({
+      id: app.id,
+      status: app.status,
+      dbLogs,
+      dockerLogs,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // File browser
 router.get('/admin/apps/:id/files', (req, res, next) => {
   try {
@@ -144,7 +231,7 @@ router.get('/admin/apps/:id/files', (req, res, next) => {
       return res.render('apps/files', { title: `Files — ${app.name}`, app, entries: [], currentRelPath: '' });
     }
 
-    const relPath = String(req.query.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    const relPath = normalizeRelPath(req.query.path);
     let browsePath;
     try {
       browsePath = relPath ? safeJoin(app.local_path, relPath) : app.local_path;
@@ -158,14 +245,15 @@ router.get('/admin/apps/:id/files', (req, res, next) => {
 
     const rawEntries = fs.readdirSync(browsePath);
     const entries = rawEntries
-      .filter((e) => !e.startsWith('.') || e === '.env')
       .map((name) => {
         const fullPath = path.join(browsePath, name);
         const stat = fs.statSync(fullPath);
+        const isText = !stat.isDirectory() && isTextFilePath(fullPath);
         return {
           name,
           isDir: stat.isDirectory(),
           size: stat.size,
+          canEdit: !stat.isDirectory() && isText && stat.size <= MAX_EDIT_FILE_BYTES,
           relPath: relPath ? `${relPath}/${name}` : name,
         };
       })
@@ -182,7 +270,7 @@ router.get('/admin/apps/:id/files/view', (req, res, next) => {
   try {
     const app = appService.getApp(Number(req.params.id));
     if (!app || !app.local_path) return res.status(404).json({ error: 'Not found' });
-    const relPath = String(req.query.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    const relPath = normalizeRelPath(req.query.path);
     if (!relPath) return res.status(400).json({ error: 'Path required' });
     let filePath;
     try {
@@ -194,7 +282,8 @@ router.get('/admin/apps/:id/files/view', (req, res, next) => {
       return res.status(404).json({ error: 'File not found' });
     }
     const stat = fs.statSync(filePath);
-    if (stat.size > 1024 * 1024) return res.status(413).json({ error: 'File too large to view (>1MB)' });
+    if (stat.size > MAX_EDIT_FILE_BYTES) return res.status(413).json({ error: 'File too large to edit (>50MB)' });
+    if (!isTextFilePath(filePath)) return res.status(415).json({ error: 'Only text-based files can be edited' });
     const content = fs.readFileSync(filePath, 'utf8');
     res.json({ content, path: relPath });
   } catch (err) {
@@ -207,7 +296,7 @@ router.post('/admin/apps/:id/files/save', express.json(), (req, res, next) => {
   try {
     const app = appService.getApp(Number(req.params.id));
     if (!app || !app.local_path) return res.status(404).json({ error: 'Not found' });
-    const relPath = String(req.body.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    const relPath = normalizeRelPath(req.body.path);
     if (!relPath) return res.status(400).json({ error: 'Path required' });
     let filePath;
     try {
@@ -218,9 +307,149 @@ router.post('/admin/apps/:id/files/save', express.json(), (req, res, next) => {
     if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
       return res.status(404).json({ error: 'File not found' });
     }
+    const stat = fs.statSync(filePath);
+    if (stat.size > MAX_EDIT_FILE_BYTES) return res.status(413).json({ error: 'File too large to edit (>50MB)' });
+    if (!isTextFilePath(filePath)) return res.status(415).json({ error: 'Only text-based files can be edited' });
     const content = String(req.body.content || '');
     fs.writeFileSync(filePath, content, 'utf8');
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/admin/apps/:id/files/download', (req, res, next) => {
+  try {
+    const app = appService.getApp(Number(req.params.id));
+    if (!app || !app.local_path) return res.status(404).json({ error: 'Not found' });
+    const relPath = normalizeRelPath(req.query.path);
+    if (!relPath) return res.status(400).json({ error: 'Path required' });
+
+    let filePath;
+    try {
+      filePath = safeJoin(app.local_path, relPath);
+    } catch {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    return res.download(filePath, path.basename(filePath));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/admin/apps/:id/files/rename', express.json(), (req, res, next) => {
+  try {
+    const app = appService.getApp(Number(req.params.id));
+    if (!app || !app.local_path) return res.status(404).json({ error: 'Not found' });
+
+    const relPath = normalizeRelPath(req.body.path);
+    const newName = sanitizeNewName(req.body.newName);
+    if (!relPath) return res.status(400).json({ error: 'Path required' });
+    if (!newName) return res.status(400).json({ error: 'Valid newName required' });
+
+    const parentRel = relPath.includes('/') ? relPath.split('/').slice(0, -1).join('/') : '';
+    const newRelPath = parentRel ? `${parentRel}/${newName}` : newName;
+
+    let sourcePath;
+    let destinationPath;
+    try {
+      sourcePath = safeJoin(app.local_path, relPath);
+      destinationPath = safeJoin(app.local_path, newRelPath);
+    } catch {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    if (!fs.existsSync(sourcePath)) return res.status(404).json({ error: 'Source not found' });
+    if (fs.existsSync(destinationPath)) return res.status(409).json({ error: 'Destination already exists' });
+
+    fs.renameSync(sourcePath, destinationPath);
+    return res.json({ ok: true, path: newRelPath });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/admin/apps/:id/files/create', express.json(), (req, res, next) => {
+  try {
+    const app = appService.getApp(Number(req.params.id));
+    if (!app || !app.local_path) return res.status(404).json({ error: 'Not found' });
+
+    const parentPath = normalizeRelPath(req.body.parentPath);
+    const name = sanitizeNewName(req.body.name);
+    const type = String(req.body.type || '').toLowerCase();
+    if (!name) return res.status(400).json({ error: 'Valid name required' });
+    if (type !== 'file' && type !== 'folder') return res.status(400).json({ error: 'type must be file or folder' });
+
+    const targetRelPath = parentPath ? `${parentPath}/${name}` : name;
+
+    let targetPath;
+    try {
+      targetPath = safeJoin(app.local_path, targetRelPath);
+    } catch {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    if (fs.existsSync(targetPath)) return res.status(409).json({ error: 'Already exists' });
+
+    if (type === 'folder') {
+      fs.mkdirSync(targetPath, { recursive: true });
+    } else {
+      fs.writeFileSync(targetPath, '', 'utf8');
+    }
+
+    return res.json({ ok: true, path: targetRelPath });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/admin/apps/:id/files/paste', express.json(), (req, res, next) => {
+  try {
+    const app = appService.getApp(Number(req.params.id));
+    if (!app || !app.local_path) return res.status(404).json({ error: 'Not found' });
+
+    const sourceRelPath = normalizeRelPath(req.body.sourcePath);
+    const destinationRelPath = normalizeRelPath(req.body.destinationPath);
+    if (!sourceRelPath) return res.status(400).json({ error: 'sourcePath required' });
+
+    let sourcePath;
+    let destinationDir;
+    try {
+      sourcePath = safeJoin(app.local_path, sourceRelPath);
+      destinationDir = destinationRelPath ? safeJoin(app.local_path, destinationRelPath) : app.local_path;
+    } catch {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    if (!fs.existsSync(sourcePath)) return res.status(404).json({ error: 'Source not found' });
+    if (!fs.existsSync(destinationDir) || !fs.statSync(destinationDir).isDirectory()) {
+      return res.status(404).json({ error: 'Destination folder not found' });
+    }
+
+    const sourceStat = fs.statSync(sourcePath);
+    const targetName = path.basename(sourcePath);
+    const targetPath = path.join(destinationDir, targetName);
+    const targetRelPath = destinationRelPath ? `${destinationRelPath}/${targetName}` : targetName;
+
+    if (fs.existsSync(targetPath)) return res.status(409).json({ error: 'Target already exists' });
+
+    if (sourceStat.isDirectory()) {
+      const resolvedSource = path.resolve(sourcePath);
+      const resolvedTarget = path.resolve(targetPath);
+      if (resolvedTarget.startsWith(resolvedSource + path.sep)) {
+        return res.status(400).json({ error: 'Cannot paste a folder into itself' });
+      }
+      fs.cpSync(sourcePath, targetPath, { recursive: true, force: false, errorOnExist: true });
+    } else {
+      fs.copyFileSync(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
+    }
+
+    return res.json({ ok: true, path: targetRelPath });
   } catch (err) {
     next(err);
   }

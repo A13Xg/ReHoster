@@ -121,7 +121,7 @@
 
       <div class="form-group form-group-full">
         <label class="form-label" for="envVars">Environment Variables</label>
-        <textarea class="form-input form-textarea" id="envVars" name="envVars" rows="6" placeholder="KEY=value&#10;DATABASE_URL=postgres://...&#10;NODE_ENV=production"></textarea>
+        <textarea class="form-input form-textarea" id="envVars" name="envVars" rows="6" placeholder="KEY=value&#10;DATABASE_URL=postgres://...&#10;NODE_ENV=production"><%= typeof formData !== 'undefined' && formData.envVars ? formData.envVars : '' %></textarea>
         <small class="form-hint">One KEY=VALUE per line. Lines starting with # are ignored.</small>
       </div>
 

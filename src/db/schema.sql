@@ -37,8 +37,6 @@ CREATE TABLE IF NOT EXISTS apps (
   detected_frameworks TEXT,
   last_health_check DATETIME,
   health_status TEXT,
-  show_maintenance INTEGER DEFAULT 0,
-  fallback_site TEXT DEFAULT 'maintenance',
   cpu_limit TEXT,
   memory_limit TEXT,
   tags TEXT,

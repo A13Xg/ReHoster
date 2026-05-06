@@ -18,10 +18,6 @@ const DEFAULT_SETTINGS = {
   docker_restart_policy: 'unless-stopped',
   analytics_retention_days: '7',
   log_retention_days: '30',
-  maintenance_title: 'Under Maintenance',
-  maintenance_message: 'This service is temporarily unavailable. Please check back soon.',
-  maintenance_bg_color: '#1a1d27',
-  maintenance_text_color: '#e4e6f0',
 };
 
 function addColumnIfMissing(db, table, column, definition) {
@@ -75,8 +71,6 @@ async function init() {
   addColumnIfMissing(db, 'apps', 'detected_frameworks', 'TEXT');
   addColumnIfMissing(db, 'apps', 'last_health_check', 'DATETIME');
   addColumnIfMissing(db, 'apps', 'health_status', 'TEXT');
-  addColumnIfMissing(db, 'apps', 'show_maintenance', 'INTEGER DEFAULT 0');
-  addColumnIfMissing(db, 'apps', 'fallback_site', "TEXT DEFAULT 'maintenance'");
   addColumnIfMissing(db, 'apps', 'cpu_limit', 'TEXT');
   addColumnIfMissing(db, 'apps', 'memory_limit', 'TEXT');
   addColumnIfMissing(db, 'apps', 'tags', 'TEXT');

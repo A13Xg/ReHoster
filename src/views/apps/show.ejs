@@ -15,6 +15,12 @@
   <a href="/admin/apps" class="btn btn-secondary">← Back to Apps</a>
 </div>
 
+<% if (envUpdated) { %>
+  <div class="alert alert-success">
+    Environment variables saved.<% if (envApplyNow) { %> Rebuild started to apply changes to the running container.<% } else { %> Rebuild or restart/redeploy to apply changes to runtime.<% } %>
+  </div>
+<% } %>
+
 <div class="detail-grid">
   <div class="card detail-card">
     <div class="card-header">
@@ -80,6 +86,8 @@
         <span class="detail-value">
           <% if (app.health_status === 'healthy') { %>
             <span class="health-dot health-healthy"></span> Healthy
+          <% } else if (app.health_status === 'degraded') { %>
+            <span class="health-dot health-degraded"></span> Degraded
           <% } else if (app.health_status === 'unhealthy') { %>
             <span class="health-dot health-unhealthy"></span> Unhealthy
           <% } else { %>
@@ -107,6 +115,13 @@
       <div class="detail-row">
         <span class="detail-label">Branch</span>
         <span class="detail-value"><code><%= app.branch %></code></span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Webhook URL</span>
+        <span class="detail-value">
+          <code><%= webhookUrl %></code>
+          <button class="copy-btn" data-copy="<%= webhookUrl %>" title="Copy webhook URL">📋</button>
+        </span>
       </div>
       <div class="detail-row">
         <span class="detail-label">Build Command</span>
@@ -190,23 +205,29 @@
   </div>
 </div>
 
-<% if (app.env_vars && app.env_vars !== '{}') { %>
 <div class="card" style="margin-top:1.5rem;">
   <div class="card-header">
     <h2>Environment Variables</h2>
-    <button class="btn btn-sm btn-ghost" onclick="toggleEnvVault()" id="envToggleBtn">👁 Show</button>
   </div>
-  <div id="envVault" class="env-vault" style="display:none;">
-    <% try { var envObj = JSON.parse(app.env_vars); Object.entries(envObj).forEach(function(e) { %>
-      <div class="env-row">
-        <span class="env-key"><%= e[0] %></span>
-        <span class="env-val env-masked" data-val="<%= e[1] %>">••••••••</span>
-        <button class="copy-btn" data-copy="<%= e[1] %>" title="Copy value">📋</button>
+  <div class="env-vault">
+    <form action="/admin/apps/<%= app.id %>/env" method="POST">
+      <div class="form-group" style="margin-bottom:0.75rem;">
+        <label class="form-label" for="envVarsEdit">Edit Variables</label>
+        <textarea class="form-input form-textarea" id="envVarsEdit" name="envVars" rows="8" placeholder="KEY=value&#10;ACCESS_CODE=example"><%= envVarsText || '' %></textarea>
+        <small class="form-hint">One KEY=VALUE per line. Supports quoted values and export KEY=value format.</small>
       </div>
-    <% }); } catch {} %>
+      <div class="form-group" style="margin-bottom:0.75rem;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" name="applyNow" value="1" />
+          <span>Apply now (trigger rebuild)</span>
+        </label>
+      </div>
+      <div>
+        <button type="submit" class="btn btn-primary">💾 Save Env Vars</button>
+      </div>
+    </form>
   </div>
 </div>
-<% } %>
 
 <div class="card" style="margin-top: 1.5rem;">
   <div class="card-header">
@@ -227,19 +248,5 @@
     </div>
   <% } %>
 </div>
-
-<script>
-function toggleEnvVault() {
-  var vault = document.getElementById('envVault');
-  var btn = document.getElementById('envToggleBtn');
-  if (vault.style.display === 'none') {
-    vault.style.display = 'block';
-    btn.textContent = '🙈 Hide';
-  } else {
-    vault.style.display = 'none';
-    btn.textContent = '👁 Show';
-  }
-}
-</script>
 
 <%- include('../partials/footer') %>

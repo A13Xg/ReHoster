@@ -1,1 +1,18 @@
-<span class="badge badge-<%= status %><% if (status === 'running') { %> badge-pulse<% } %><% if (status === 'failed') { %> badge-shake<% } %>"><%= status %></span>
+<%
+	var rawStatus = String(status || 'unknown').toLowerCase();
+	var transitional = ['creating', 'cloning', 'building', 'staging', 'restarting'];
+	var icons = {
+		running: '●',
+		stopped: '■',
+		failed: '✕',
+		creating: '◌',
+		cloning: '↧',
+		building: '⌛',
+		staging: '◔',
+		restarting: '↺',
+		unknown: '?',
+	};
+	var display = rawStatus;
+	var icon = icons[rawStatus] || icons.unknown;
+%>
+<span class="badge badge-<%= rawStatus %><% if (rawStatus === 'running') { %> badge-pulse<% } %><% if (rawStatus === 'failed') { %> badge-shake<% } %><% if (transitional.includes(rawStatus)) { %> badge-working<% } %>" data-status="<%= rawStatus %>"><span class="badge-icon"><%= icon %></span><%= display %></span>

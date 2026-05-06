@@ -7,10 +7,15 @@
       <small class="text-muted">/<%= currentRelPath %></small>
     <% } %>
   </div>
-  <a href="/admin/apps/<%= app.id %>" class="btn btn-secondary">← Back to App</a>
+  <div class="header-actions">
+    <button class="btn btn-secondary" onclick="createEntry('file')">+ New File</button>
+    <button class="btn btn-secondary" onclick="createEntry('folder')">+ New Folder</button>
+    <button id="pasteButton" class="btn btn-secondary" onclick="pasteIntoCurrent()" disabled>Paste</button>
+    <a href="/admin/apps/<%= app.id %>" class="btn btn-secondary">← Back to App</a>
+  </div>
 </div>
 
-<div class="card">
+<div class="card" id="fileBrowserCard" oncontextmenu="openBackgroundMenu(event)">
   <!-- Breadcrumbs -->
   <div class="file-breadcrumbs">
     <a href="/admin/apps/<%= app.id %>/files" class="breadcrumb-link">📁 root</a>
@@ -46,26 +51,43 @@
           </tr>
         <% } %>
         <% entries.forEach(function(entry) { %>
-          <tr>
+          <tr class="file-row"
+              data-name="<%= entry.name %>"
+              data-rel-path="<%= entry.relPath %>"
+              data-is-dir="<%= entry.isDir ? '1' : '0' %>"
+              data-size="<%= entry.size %>"
+              data-can-edit="<%= entry.canEdit ? '1' : '0' %>"
+              oncontextmenu="openEntryMenu(event, this)">
             <td>
               <% if (entry.isDir) { %>
                 <a href="/admin/apps/<%= app.id %>/files?path=<%= encodeURIComponent(entry.relPath) %>">📂 <%= entry.name %></a>
               <% } else { %>
-                <span class="file-entry" onclick="viewFile('<%= encodeURIComponent(entry.relPath) %>', '<%= app.id %>')">📄 <%= entry.name %></span>
+                <div class="file-name-actions">
+                  <span class="file-name-truncate">
+                    <span class="file-entry" onclick="editFile('<%= encodeURIComponent(entry.relPath) %>', '<%= app.id %>', <%= entry.canEdit ? 'true' : 'false' %>)">📄 <%= entry.name %></span>
+                  </span>
+                  <button class="btn btn-sm btn-secondary file-inline-edit <%= entry.canEdit ? '' : 'btn-disabled' %>" <%= entry.canEdit ? '' : 'disabled title="Files over 50MB cannot be edited"' %> onclick="editFile('<%= encodeURIComponent(entry.relPath) %>', '<%= app.id %>', <%= entry.canEdit ? 'true' : 'false' %>)">Edit</button>
+                </div>
               <% } %>
             </td>
             <td class="text-muted"><%= entry.isDir ? 'directory' : 'file' %></td>
             <td class="text-muted"><%= entry.isDir ? '—' : (entry.size > 1024 ? Math.round(entry.size/1024) + ' KB' : entry.size + ' B') %></td>
-            <td>
-              <% if (!entry.isDir) { %>
-                <button class="btn btn-sm btn-secondary" onclick="viewFile('<%= encodeURIComponent(entry.relPath) %>', '<%= app.id %>')">View/Edit</button>
-              <% } %>
-            </td>
+            <td class="text-muted">—</td>
           </tr>
         <% }) %>
       </tbody>
     </table>
   <% } %>
+</div>
+
+<div id="fileContextMenu" class="file-context-menu" style="display:none;">
+  <button type="button" class="file-context-item" id="ctxEdit" onclick="contextEdit()">Edit</button>
+  <button type="button" class="file-context-item" onclick="contextCopy()">Copy</button>
+  <button type="button" class="file-context-item" onclick="contextPaste()">Paste Here</button>
+  <button type="button" class="file-context-item" onclick="contextRename()">Rename</button>
+  <button type="button" class="file-context-item" id="ctxDownload" onclick="contextDownload()">Download</button>
+  <button type="button" class="file-context-item" onclick="contextNewFile()">New File</button>
+  <button type="button" class="file-context-item" onclick="contextNewFolder()">New Folder</button>
 </div>
 
 <!-- File editor modal -->
@@ -77,7 +99,8 @@
       <button class="modal-close" onclick="closeFileModal()">✕</button>
     </div>
     <div class="modal-body">
-      <textarea id="fileContent" class="form-input form-textarea" style="font-family:monospace;min-height:400px;font-size:0.85rem;" spellcheck="false"></textarea>
+      <div id="fileEditor" class="code-editor"></div>
+      <textarea id="fileContentFallback" class="form-input form-textarea" style="display:none;font-family:monospace;min-height:430px;font-size:0.85rem;" spellcheck="false"></textarea>
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary" onclick="saveFile()">💾 Save</button>
@@ -87,28 +110,110 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.35.4/ace.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 var currentFilePath = null;
 var currentAppId = null;
-function viewFile(encodedPath, appId) {
-  currentFilePath = decodeURIComponent(encodedPath);
-  currentAppId = appId;
-  document.getElementById('fileModalTitle').textContent = currentFilePath;
-  document.getElementById('fileContent').value = 'Loading…';
-  document.getElementById('fileModal').style.display = 'flex';
-  fetch('/admin/apps/' + appId + '/files/view?path=' + encodedPath, {credentials:'same-origin'})
-    .then(function(r) { return r.json(); })
-    .then(function(d) { document.getElementById('fileContent').value = d.content || ''; })
-    .catch(function() { document.getElementById('fileContent').value = 'Error loading file.'; });
+var copiedEntry = null;
+var contextEntry = null;
+var editor = null;
+var usingFallbackEditor = false;
+var currentCanEdit = false;
+var currentRelPath = '<%= currentRelPath %>';
+var appId = '<%= app.id %>';
+
+function getCsrfToken() {
+  var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+  return tokenMeta ? tokenMeta.getAttribute('content') : '';
 }
+
+function getAceMode(filePath) {
+  var lower = String(filePath || '').toLowerCase();
+  if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs') || lower.endsWith('.jsx') || lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'ace/mode/javascript';
+  if (lower.endsWith('.json') || lower.endsWith('.jsonc')) return 'ace/mode/json';
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'ace/mode/markdown';
+  if (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.ejs')) return 'ace/mode/html';
+  if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.sass') || lower.endsWith('.less')) return 'ace/mode/css';
+  if (lower.endsWith('.yml') || lower.endsWith('.yaml')) return 'ace/mode/yaml';
+  if (lower.endsWith('.xml') || lower.endsWith('.svg')) return 'ace/mode/xml';
+  if (lower.endsWith('.py')) return 'ace/mode/python';
+  if (lower.endsWith('.sh') || lower.endsWith('.bash') || lower.endsWith('.zsh')) return 'ace/mode/sh';
+  if (lower.endsWith('.ps1') || lower.endsWith('.bat') || lower.endsWith('.cmd')) return 'ace/mode/powershell';
+  if (lower.endsWith('.sql')) return 'ace/mode/sql';
+  return 'ace/mode/text';
+}
+
+function ensureEditor() {
+  if (editor) return;
+  if (typeof ace === 'undefined' || !ace || typeof ace.edit !== 'function') {
+    usingFallbackEditor = true;
+    document.getElementById('fileEditor').style.display = 'none';
+    document.getElementById('fileContentFallback').style.display = 'block';
+    return;
+  }
+  editor = ace.edit('fileEditor');
+  editor.setTheme('ace/theme/monokai');
+  editor.setOptions({
+    fontSize: '13px',
+    showPrintMargin: false,
+    useSoftTabs: true,
+    tabSize: 2,
+    wrap: true,
+  });
+}
+
+function editFile(encodedPath, appIdValue, canEdit) {
+  if (!canEdit) {
+    alert('Files over 50MB or non-text files cannot be edited.');
+    return;
+  }
+  currentFilePath = decodeURIComponent(encodedPath);
+  currentAppId = appIdValue;
+  currentCanEdit = true;
+  ensureEditor();
+  document.getElementById('fileModalTitle').textContent = currentFilePath;
+  if (usingFallbackEditor) {
+    document.getElementById('fileContentFallback').value = 'Loading...';
+    document.getElementById('fileContentFallback').readOnly = false;
+  } else {
+    editor.setValue('Loading...', -1);
+    editor.session.setMode(getAceMode(currentFilePath));
+    editor.setReadOnly(false);
+  }
+  document.getElementById('fileModal').style.display = 'flex';
+  fetch('/admin/apps/' + appIdValue + '/files/view?path=' + encodedPath, { credentials: 'same-origin' })
+    .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+    .then(function(result) {
+      if (!result.ok) throw new Error(result.data.error || 'Failed to load file');
+      if (usingFallbackEditor) {
+        document.getElementById('fileContentFallback').value = result.data.content || '';
+      } else {
+        editor.setValue(result.data.content || '', -1);
+      }
+    })
+    .catch(function(err) {
+      if (usingFallbackEditor) {
+        document.getElementById('fileContentFallback').value = 'Error loading file: ' + err.message;
+        document.getElementById('fileContentFallback').readOnly = true;
+      } else {
+        editor.setValue('Error loading file: ' + err.message, -1);
+        editor.setReadOnly(true);
+      }
+      currentCanEdit = false;
+    });
+}
+
 function closeFileModal() {
   document.getElementById('fileModal').style.display = 'none';
   currentFilePath = null;
 }
+
 function saveFile() {
-  if (!currentFilePath || !currentAppId) return;
-  var content = document.getElementById('fileContent').value;
-  var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+  if (!currentFilePath || !currentAppId || !currentCanEdit) return;
+  var content = usingFallbackEditor
+    ? document.getElementById('fileContentFallback').value
+    : (editor ? editor.getValue() : '');
+  var csrfToken = getCsrfToken();
   document.getElementById('saveStatus').textContent = 'Saving…';
   fetch('/admin/apps/' + currentAppId + '/files/save', {
     method: 'POST',
@@ -116,10 +221,189 @@ function saveFile() {
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
     body: JSON.stringify({ path: currentFilePath, content: content })
   })
-  .then(function(r) { return r.json(); })
-  .then(function(d) { document.getElementById('saveStatus').textContent = d.ok ? '✅ Saved' : '❌ Error'; })
-  .catch(function() { document.getElementById('saveStatus').textContent = '❌ Error'; });
+  .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+  .then(function(result) {
+    document.getElementById('saveStatus').textContent = result.ok && result.data.ok ? '✅ Saved' : '❌ ' + (result.data.error || 'Error');
+  })
+  .catch(function(err) { document.getElementById('saveStatus').textContent = '❌ ' + err.message; });
 }
+
+function openEntryMenu(event, rowEl) {
+  if (event.button !== 2) return;
+  event.preventDefault();
+  event.stopPropagation();
+  var isDir = rowEl.dataset.isDir === '1';
+  contextEntry = {
+    relPath: rowEl.dataset.relPath,
+    name: rowEl.dataset.name,
+    isDir: isDir,
+    canEdit: rowEl.dataset.canEdit === '1',
+  };
+  showContextMenu(event.clientX, event.clientY, contextEntry);
+}
+
+function openBackgroundMenu(event) {
+  if (event.button !== 2) return;
+  if (event.target.closest('tr.file-row')) return;
+  event.preventDefault();
+  contextEntry = {
+    relPath: currentRelPath,
+    name: currentRelPath || 'root',
+    isDir: true,
+    canEdit: false,
+  };
+  showContextMenu(event.clientX, event.clientY, contextEntry);
+}
+
+function showContextMenu(x, y, entry) {
+  var menu = document.getElementById('fileContextMenu');
+  var editItem = document.getElementById('ctxEdit');
+  var downloadItem = document.getElementById('ctxDownload');
+
+  if (entry.isDir) {
+    editItem.classList.add('hidden');
+    downloadItem.classList.add('hidden');
+  } else {
+    editItem.classList.remove('hidden');
+    downloadItem.classList.remove('hidden');
+    if (!entry.canEdit) editItem.classList.add('disabled');
+    else editItem.classList.remove('disabled');
+  }
+
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+
+function hideContextMenu() {
+  var menu = document.getElementById('fileContextMenu');
+  menu.style.display = 'none';
+}
+
+function contextEdit() {
+  if (!contextEntry || contextEntry.isDir || !contextEntry.canEdit) return;
+  editFile(encodeURIComponent(contextEntry.relPath), appId, true);
+  hideContextMenu();
+}
+
+function contextCopy() {
+  if (!contextEntry) return;
+  copyEntry(encodeURIComponent(contextEntry.relPath), contextEntry.isDir);
+  hideContextMenu();
+}
+
+function contextPaste() {
+  if (!contextEntry) return;
+  pasteIntoFolder(encodeURIComponent(contextEntry.isDir ? contextEntry.relPath : currentRelPath));
+  hideContextMenu();
+}
+
+function contextRename() {
+  if (!contextEntry) return;
+  renameEntry(encodeURIComponent(contextEntry.relPath));
+  hideContextMenu();
+}
+
+function contextDownload() {
+  if (!contextEntry || contextEntry.isDir) return;
+  downloadEntry(encodeURIComponent(contextEntry.relPath));
+  hideContextMenu();
+}
+
+function contextNewFile() {
+  createEntry('file');
+  hideContextMenu();
+}
+
+function contextNewFolder() {
+  createEntry('folder');
+  hideContextMenu();
+}
+
+function copyEntry(encodedPath, isDir) {
+  copiedEntry = {
+    sourcePath: decodeURIComponent(encodedPath),
+    isDir: !!isDir,
+  };
+  document.getElementById('pasteButton').disabled = false;
+}
+
+function pasteIntoCurrent() {
+  pasteIntoFolder(encodeURIComponent(currentRelPath));
+}
+
+function pasteIntoFolder(encodedDestinationPath) {
+  if (!copiedEntry) {
+    alert('Copy a file or folder first.');
+    return;
+  }
+
+  fetch('/admin/apps/' + appId + '/files/paste', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ sourcePath: copiedEntry.sourcePath, destinationPath: decodeURIComponent(encodedDestinationPath || '') })
+  })
+    .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+    .then(function(result) {
+      if (!result.ok) throw new Error(result.data.error || 'Paste failed');
+      window.location.reload();
+    })
+    .catch(function(err) { alert(err.message); });
+}
+
+function renameEntry(encodedPath) {
+  var oldRelPath = decodeURIComponent(encodedPath);
+  var currentName = oldRelPath.split('/').pop();
+  var newName = prompt('Rename to:', currentName);
+  if (newName === null) return;
+  fetch('/admin/apps/' + appId + '/files/rename', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ path: oldRelPath, newName: newName })
+  })
+    .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+    .then(function(result) {
+      if (!result.ok) throw new Error(result.data.error || 'Rename failed');
+      window.location.reload();
+    })
+    .catch(function(err) { alert(err.message); });
+}
+
+function createEntry(type) {
+  var label = type === 'folder' ? 'folder' : 'file';
+  var name = prompt('New ' + label + ' name:');
+  if (name === null) return;
+
+  fetch('/admin/apps/' + appId + '/files/create', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ type: type, parentPath: currentRelPath, name: name })
+  })
+    .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+    .then(function(result) {
+      if (!result.ok) throw new Error(result.data.error || 'Create failed');
+      window.location.reload();
+    })
+    .catch(function(err) { alert(err.message); });
+}
+
+function downloadEntry(encodedPath) {
+  window.location.href = '/admin/apps/' + appId + '/files/download?path=' + encodedPath;
+}
+
+document.addEventListener('click', function() {
+  hideContextMenu();
+});
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') {
+    hideContextMenu();
+    closeFileModal();
+  }
+});
 </script>
 
 <%- include('../partials/footer') %>
