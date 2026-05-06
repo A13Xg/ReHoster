@@ -5,13 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title><%= typeof title !== 'undefined' ? title + ' — ' + (typeof panelName !== 'undefined' ? panelName : 'ReHoster') : (typeof panelName !== 'undefined' ? panelName : 'ReHoster') %></title>
   <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/media/Re-HosterLogo.png" />
+  <link rel="apple-touch-icon" href="/media/Re-HosterLogo.png" />
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <span class="brand-icon">⚡</span>
+        <img class="brand-icon" src="/media/Re-HosterLogo.png" alt="ReHoster logo" />
         <span class="brand-name"><%= typeof panelName !== 'undefined' ? panelName : 'ReHoster' %></span>
       </div>
       <nav class="sidebar-nav">

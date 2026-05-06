@@ -117,7 +117,12 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; 
   background-clip: text;
 }
 
-.brand-icon { font-size: 1.4rem; -webkit-text-fill-color: initial; }
+.brand-icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  object-fit: contain;
+  -webkit-text-fill-color: initial;
+}
 .brand-name { letter-spacing: -0.02em; }
 
 .sidebar-nav {

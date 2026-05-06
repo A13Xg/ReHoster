@@ -25,8 +25,13 @@ const app = express();
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/media', express.static(path.join(__dirname, '..', 'media')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'media', 'Re-HosterLogo.ico'));
+});
 
 // Security headers
 app.use((req, res, next) => {
