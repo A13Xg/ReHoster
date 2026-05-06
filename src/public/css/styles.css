@@ -274,6 +274,7 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; 
 .stat-pill:hover { transform: translateY(-1px); }
 .stat-pill.running { border-color: var(--color-running); color: var(--color-running); }
 .stat-pill.stopped { border-color: var(--color-stopped); color: var(--color-stopped); }
+.stat-pill.missing { border-color: #f59e0b; color: #f59e0b; }
 .stat-pill.failed { border-color: var(--color-failed); color: var(--color-failed); }
 
 /* ── Table ── */
@@ -323,6 +324,7 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; 
 
 .badge-running { background: rgba(34,197,94,0.15); color: var(--color-running); border: 1px solid rgba(34,197,94,0.3); }
 .badge-stopped { background: rgba(107,114,128,0.15); color: var(--color-stopped); border: 1px solid rgba(107,114,128,0.3); }
+.badge-missing { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.35); }
 .badge-failed { background: rgba(239,68,68,0.15); color: var(--color-failed); border: 1px solid rgba(239,68,68,0.3); }
 .badge-building { background: rgba(234,179,8,0.15); color: var(--color-building); border: 1px solid rgba(234,179,8,0.3); }
 .badge-cloning { background: rgba(59,130,246,0.15); color: var(--color-cloning); border: 1px solid rgba(59,130,246,0.3); }
@@ -485,6 +487,23 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; 
   box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
 }
 
+.form-group-error .form-label {
+  color: #fca5a5;
+}
+
+.form-input-error {
+  border-color: rgba(239,68,68,0.75) !important;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.16) !important;
+  background: rgba(127,29,29,0.08);
+}
+
+.form-error-text {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: #fca5a5;
+}
+
 .form-input[type="color"] { height: 40px; padding: 4px; cursor: pointer; }
 
 .form-textarea { resize: vertical; min-height: 100px; }
@@ -508,6 +527,18 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; 
 
 .required { color: var(--color-danger); }
 .inline-form { display: inline; }
+
+@keyframes formShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+.form-invalid-shake {
+  animation: formShake 0.32s ease;
+}
 
 /* ── Alerts ── */
 .alert {

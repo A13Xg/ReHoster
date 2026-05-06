@@ -119,6 +119,18 @@ function normalizeDockerFailure(output) {
   };
 }
 
+function isTransientDockerBuildFailure(output) {
+  const text = (output || '').toLowerCase();
+  return text.includes('tls handshake timeout')
+    || text.includes('i/o timeout')
+    || text.includes('connection reset by peer')
+    || text.includes('context deadline exceeded')
+    || text.includes('temporary failure in name resolution')
+    || text.includes('toomanyrequests')
+    || text.includes('rate limit')
+    || text.includes('503 service unavailable');
+}
+
 async function getDockerAvailabilityDetails() {
   const cmdInfo = getDockerCommandInfo();
 
@@ -187,18 +199,39 @@ function getPythonDependencyInstallCommand(appPath) {
   const manifests = analyzeDependencyManifests(appPath);
 
   if (manifests.hasRequirementsTxt) {
-    return 'if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi';
+    return 'if [ -f requirements.txt ]; then /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt; fi';
   }
 
   if (manifests.hasPyproject) {
-    return 'if [ -f pyproject.toml ] && [ -f poetry.lock ]; then pip install --no-cache-dir poetry && poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi --only main; elif [ -f pyproject.toml ]; then pip install --no-cache-dir .; fi';
+    return 'if [ -f pyproject.toml ] && [ -f poetry.lock ]; then /opt/venv/bin/python -m pip install --no-cache-dir poetry && /opt/venv/bin/poetry config virtualenvs.create false && /opt/venv/bin/poetry install --no-interaction --no-ansi --only main; elif [ -f pyproject.toml ]; then /opt/venv/bin/python -m pip install --no-cache-dir .; fi';
   }
 
   if (manifests.hasPipfile) {
-    return 'if [ -f Pipfile ]; then pip install --no-cache-dir pipenv && PIPENV_VENV_IN_PROJECT=0 pipenv install --system --deploy; fi';
+    return 'if [ -f Pipfile ]; then /opt/venv/bin/python -m pip install --no-cache-dir pipenv && PIPENV_VENV_IN_PROJECT=0 /opt/venv/bin/pipenv install --system --deploy; fi';
   }
 
   return null;
+}
+
+function autoRepairGeneratedDockerfileForPep668(appPath) {
+  const dockerfilePath = path.join(appPath, 'Dockerfile');
+  if (!fs.existsSync(dockerfilePath)) return false;
+
+  const existing = fs.readFileSync(dockerfilePath, 'utf8');
+  if (!existing.includes(GENERATED_DOCKERFILE_MARKER)) return false;
+
+  let repaired = existing;
+  repaired = repaired.replaceAll('pip install --no-cache-dir -r requirements.txt', '/opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt');
+  repaired = repaired.replaceAll('pip install --no-cache-dir poetry', '/opt/venv/bin/python -m pip install --no-cache-dir poetry');
+  repaired = repaired.replaceAll('poetry config virtualenvs.create false', '/opt/venv/bin/poetry config virtualenvs.create false');
+  repaired = repaired.replaceAll('poetry install --no-interaction --no-ansi --only main', '/opt/venv/bin/poetry install --no-interaction --no-ansi --only main');
+  repaired = repaired.replaceAll('pip install --no-cache-dir .', '/opt/venv/bin/python -m pip install --no-cache-dir .');
+  repaired = repaired.replaceAll('pip install --no-cache-dir pipenv', '/opt/venv/bin/python -m pip install --no-cache-dir pipenv');
+  repaired = repaired.replaceAll('PIPENV_VENV_IN_PROJECT=0 pipenv install --system --deploy', 'PIPENV_VENV_IN_PROJECT=0 /opt/venv/bin/pipenv install --system --deploy');
+
+  if (repaired === existing) return false;
+  fs.writeFileSync(dockerfilePath, repaired, 'utf8');
+  return true;
 }
 
 async function attemptDockerAutoRepair() {
@@ -416,6 +449,27 @@ async function buildImage(appPath, imageName) {
       cwd: appPath,
       timeout: 12 * 60 * 1000,
     });
+  }
+
+  if (result.exitCode !== 0) {
+    const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim().toLowerCase();
+    const isPep668Failure = output.includes('externally-managed-environment') || output.includes('pep 668');
+    if (isPep668Failure && autoRepairGeneratedDockerfileForPep668(appPath)) {
+      result = await runCommand(DOCKER_CMD, ['build', '--pull', '-t', imageName, appPath], {
+        cwd: appPath,
+        timeout: 12 * 60 * 1000,
+      });
+    }
+  }
+
+  if (result.exitCode !== 0) {
+    const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    if (isTransientDockerBuildFailure(output)) {
+      result = await runCommand(DOCKER_CMD, ['build', '--pull', '--no-cache', '-t', imageName, appPath], {
+        cwd: appPath,
+        timeout: 15 * 60 * 1000,
+      });
+    }
   }
 
   if (result.exitCode !== 0) {

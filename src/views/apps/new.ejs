@@ -133,7 +133,7 @@
 
       <div class="form-group">
         <label class="form-label" for="containerPort">Internal Container Port</label>
-        <input class="form-input" type="number" id="containerPort" name="containerPort" min="1" max="65535" value="<%= typeof formData !== 'undefined' && formData.containerPort ? formData.containerPort : (typeof defaultContainerPort !== 'undefined' ? defaultContainerPort : 3000) %>" />
+        <input class="form-input" type="number" id="containerPort" name="containerPort" min="1" max="65535" required value="<%= typeof formData !== 'undefined' && formData.containerPort ? formData.containerPort : '' %>" />
         <small class="form-hint">Port your app listens on inside the container (internal).</small>
       </div>
     </div>

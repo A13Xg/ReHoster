@@ -21,6 +21,18 @@
   </div>
 <% } %>
 
+<% if (detailsUpdated) { %>
+  <div class="alert alert-success">
+    App details saved.<% if (detailsRedeploy) { %> Re-deploy started in the background.<% } %>
+  </div>
+<% } %>
+
+<% if (detailsError) { %>
+  <div class="alert alert-danger">
+    Failed to update app details: <%= detailsError %>
+  </div>
+<% } %>
+
 <div class="detail-grid">
   <div class="card detail-card">
     <div class="card-header">
@@ -203,6 +215,98 @@
       <small class="text-muted">Keyboard shortcuts: press <kbd>?</kbd> for help</small>
     </div>
   </div>
+</div>
+
+<div class="card" style="margin-top:1.5rem;">
+  <div class="card-header">
+    <h2>Edit App Details</h2>
+  </div>
+  <form action="/admin/apps/<%= app.id %>/details" method="POST" class="app-form" style="padding:1rem;">
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label" for="nameEdit">App Name</label>
+        <input class="form-input" type="text" id="nameEdit" name="name" maxlength="50" required value="<%= app.name || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="repoUrlEdit">GitHub Repository URL</label>
+        <input class="form-input" type="text" id="repoUrlEdit" name="repoUrl" required value="<%= app.repo_url || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="branchEdit">Branch</label>
+        <input class="form-input" type="text" id="branchEdit" name="branch" required value="<%= app.branch || 'main' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="serviceTypeEdit">Service Type</label>
+        <select class="form-input" id="serviceTypeEdit" name="service_type">
+          <option value="auto" <%= (app.service_type || 'auto') === 'auto' ? 'selected' : '' %>>Auto-detect</option>
+          <option value="node" <%= app.service_type === 'node' ? 'selected' : '' %>>Node.js</option>
+          <option value="static" <%= app.service_type === 'static' ? 'selected' : '' %>>Static / HTML</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="hostPortEdit">External Host Port</label>
+        <input class="form-input" type="number" id="hostPortEdit" name="port" min="1" max="65535" required value="<%= app.port || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="containerPortEdit">Internal Container Port</label>
+        <input class="form-input" type="number" id="containerPortEdit" name="containerPort" min="1" max="65535" required value="<%= app.container_port || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="buildCommandEdit">Build Command</label>
+        <input class="form-input" type="text" id="buildCommandEdit" name="buildCommand" value="<%= app.build_command || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="startCommandEdit">Start Command</label>
+        <input class="form-input" type="text" id="startCommandEdit" name="startCommand" value="<%= app.start_command || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="groupEdit">Group</label>
+        <select class="form-input" id="groupEdit" name="group_id">
+          <option value="">- No Group -</option>
+          <% if (groups && groups.length > 0) { groups.forEach(function(g) { %>
+            <option value="<%= g.id %>" <%= app.group_id === g.id ? 'selected' : '' %>><%= g.name %></option>
+          <% }) } %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="publicHostnameEdit">Public Hostname</label>
+        <input class="form-input" type="text" id="publicHostnameEdit" name="public_hostname" value="<%= app.public_hostname || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="tagsEdit">Tags</label>
+        <input class="form-input" type="text" id="tagsEdit" name="tags" value="<%= app.tags || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cpuLimitEdit">CPU Limit</label>
+        <input class="form-input" type="text" id="cpuLimitEdit" name="cpu_limit" value="<%= app.cpu_limit || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="memoryLimitEdit">Memory Limit</label>
+        <input class="form-input" type="text" id="memoryLimitEdit" name="memory_limit" value="<%= app.memory_limit || '' %>" />
+      </div>
+
+      <div class="form-group form-group-full">
+        <label class="form-label" for="descriptionEdit">Description</label>
+        <textarea class="form-input form-textarea" id="descriptionEdit" name="description" rows="3"><%= app.description || '' %></textarea>
+      </div>
+    </div>
+
+    <div class="form-actions" style="margin-top:0.5rem;">
+      <button type="submit" class="btn btn-primary">Save Details &amp; Re-deploy</button>
+    </div>
+  </form>
 </div>
 
 <div class="card" style="margin-top:1.5rem;">

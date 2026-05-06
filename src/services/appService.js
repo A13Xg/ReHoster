@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const dotenv = require('dotenv');
 const db = require('../config/db');
 const config = require('../config/env');
-const { sanitizeAppName, validateAppInput } = require('../utils/validation');
+const { sanitizeAppName, validateAppInput, isValidRepoUrl } = require('../utils/validation');
 const { getAppDir, ensureDir } = require('../utils/paths');
 const portService = require('./portService');
 const gitService = require('./gitService');
@@ -19,6 +19,58 @@ let dockerAutoRepairAttempted = false;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function clearReadOnlyRecursive(targetPath) {
+  if (!targetPath || !fs.existsSync(targetPath)) return;
+
+  let stat;
+  try {
+    stat = fs.lstatSync(targetPath);
+  } catch {
+    return;
+  }
+
+  try {
+    fs.chmodSync(targetPath, 0o666);
+  } catch {
+    // Best effort only.
+  }
+
+  if (!stat.isDirectory()) return;
+
+  let children = [];
+  try {
+    children = fs.readdirSync(targetPath);
+  } catch {
+    return;
+  }
+
+  for (const child of children) {
+    clearReadOnlyRecursive(path.join(targetPath, child));
+  }
+
+  try {
+    fs.chmodSync(targetPath, 0o777);
+  } catch {
+    // Best effort only.
+  }
+}
+
+function removeAppDirectory(localPath) {
+  if (!localPath || !fs.existsSync(localPath)) return;
+
+  try {
+    fs.rmSync(localPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+    return;
+  } catch (initialErr) {
+    const recoverable = ['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(initialErr && initialErr.code);
+    if (!recoverable) throw initialErr;
+  }
+
+  // Windows can leave cloned repo files/directories as read-only or momentarily locked.
+  clearReadOnlyRecursive(localPath);
+  fs.rmSync(localPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }
 
 function getPanelBaseUrl() {
@@ -215,8 +267,156 @@ function updateAppEnvVars(id, rawEnvText) {
   return parsed;
 }
 
+function updateAppDetails(id, payload) {
+  const app = getApp(id);
+  if (!app) throw new Error(`App ${id} not found`);
+
+  const name = String(payload.name || '').trim();
+  if (!name || name.length > 50) {
+    throw new Error('App name is required and must be 50 characters or fewer');
+  }
+
+  const repoUrl = String(payload.repoUrl || '').trim();
+  if (!repoUrl || !isValidRepoUrl(repoUrl)) {
+    throw new Error('Repository URL must be a valid GitHub URL (https or SSH)');
+  }
+
+  const branch = String(payload.branch || 'main').trim();
+  if (!branch || branch.length > 100 || /[^a-zA-Z0-9\-_./]/.test(branch)) {
+    throw new Error('Branch name is invalid');
+  }
+
+  const containerPort = parseInt(String(payload.containerPort || '').trim(), 10);
+  if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
+    throw new Error('Internal container port must be a valid port number (1-65535)');
+  }
+
+  let hostPort = app.port;
+  const requestedPortRaw = String(payload.port || '').trim();
+  if (requestedPortRaw.length > 0) {
+    const requestedPort = parseInt(requestedPortRaw, 10);
+    if (!Number.isInteger(requestedPort) || requestedPort < config.appPortStart || requestedPort > config.appPortEnd) {
+      throw new Error(`External host port must be in range ${config.appPortStart}-${config.appPortEnd}`);
+    }
+
+    const conflict = db.prepare('SELECT id FROM apps WHERE port = ? AND id != ?').get(requestedPort, id);
+    if (conflict) {
+      throw new Error(`External host port ${requestedPort} is already in use`);
+    }
+    hostPort = requestedPort;
+  }
+
+  const serviceType = String(payload.service_type || 'auto').trim();
+  if (!['auto', 'node', 'static'].includes(serviceType)) {
+    throw new Error('Service type must be auto, node, or static');
+  }
+
+  const groupId = payload.group_id && String(payload.group_id).trim().length > 0
+    ? parseInt(String(payload.group_id).trim(), 10)
+    : null;
+  if (groupId !== null && !Number.isInteger(groupId)) {
+    throw new Error('Group is invalid');
+  }
+  if (groupId !== null) {
+    const existingGroup = db.prepare('SELECT id FROM groups WHERE id = ?').get(groupId);
+    if (!existingGroup) throw new Error('Selected group does not exist');
+  }
+
+  const description = payload.description ? String(payload.description).trim().slice(0, 500) : null;
+  const publicHostname = payload.public_hostname ? String(payload.public_hostname).trim().slice(0, 500) : null;
+  const tags = payload.tags ? String(payload.tags).trim().slice(0, 500) : null;
+  const buildCommand = payload.buildCommand ? String(payload.buildCommand).trim() : '';
+  const startCommand = payload.startCommand ? String(payload.startCommand).trim() : '';
+  const cpuLimit = payload.cpu_limit ? String(payload.cpu_limit).trim() : null;
+  const memoryLimit = payload.memory_limit ? String(payload.memory_limit).trim() : null;
+
+  db.prepare(
+    `UPDATE apps SET
+      name = ?,
+      repo_url = ?,
+      branch = ?,
+      port = ?,
+      container_port = ?,
+      build_command = ?,
+      start_command = ?,
+      description = ?,
+      group_id = ?,
+      public_hostname = ?,
+      service_type = ?,
+      tags = ?,
+      cpu_limit = ?,
+      memory_limit = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?`
+  ).run(
+    name,
+    repoUrl,
+    branch,
+    hostPort,
+    containerPort,
+    buildCommand,
+    startCommand,
+    description,
+    groupId,
+    publicHostname,
+    serviceType,
+    tags,
+    cpuLimit,
+    memoryLimit,
+    id
+  );
+
+  logService.addLog(id, 'info', 'App details updated from panel');
+  return getApp(id);
+}
+
 function updateStatus(id, status) {
   db.prepare('UPDATE apps SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, id);
+}
+
+async function syncAppStatusWithDocker(id) {
+  const app = getApp(id);
+  if (!app) return null;
+
+  // Keep deployment lifecycle statuses authoritative while in progress.
+  if (['creating', 'cloning', 'building', 'staging', 'restarting'].includes(app.status)) {
+    return app;
+  }
+
+  try {
+    await ensureDockerAvailable();
+    const dockerStatus = await dockerService.getContainerStatus(app.container_name);
+
+    let normalizedStatus = app.status;
+    if (dockerStatus === 'running') normalizedStatus = 'running';
+    else if (dockerStatus === 'stopped') normalizedStatus = 'stopped';
+    else if (dockerStatus === 'not_found') normalizedStatus = 'missing';
+
+    if (normalizedStatus !== app.status) {
+      db.prepare('UPDATE apps SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(normalizedStatus, app.id);
+      logService.addLog(app.id, 'warn', `Container state drift detected. WebUI status updated to '${normalizedStatus}'.`);
+      return getApp(app.id);
+    }
+
+    return app;
+  } catch {
+    // If Docker is temporarily unavailable, keep last known status.
+    return app;
+  }
+}
+
+async function syncAllAppStatusesWithDocker() {
+  const apps = getAllApps();
+  const refreshed = [];
+
+  for (const app of apps) {
+    // Sequential to avoid hammering Docker daemon with parallel inspect calls.
+    const synced = await syncAppStatusWithDocker(app.id);
+    if (synced) refreshed.push(synced);
+  }
+
+  return refreshed;
 }
 
 async function ensureDockerAvailable() {
@@ -283,11 +483,23 @@ async function runDockerLifecycleAction(app, action, targetStatus, successMessag
       }
     }
   } catch (err) {
-    if (targetStatus === 'running') {
+    if (err && err.code === 'container_missing') {
+      updateStatus(app.id, 'missing');
+    } else if (targetStatus === 'running') {
       updateStatus(app.id, 'failed');
     }
     logService.addLog(app.id, 'error', err.message);
     throw err;
+  }
+}
+
+async function ensureContainerExists(app, actionName) {
+  const status = await dockerService.getContainerStatus(app.container_name);
+  if (status === 'not_found') {
+    updateStatus(app.id, 'missing');
+    const error = new Error(`Cannot ${actionName}: container '${app.container_name}' is missing. Use Rebuild to recreate it.`);
+    error.code = 'container_missing';
+    throw error;
   }
 }
 
@@ -303,7 +515,7 @@ async function createApp(data) {
   if (existing) throw new Error(`An app with safe name "${safeName}" already exists`);
 
   const port = portService.assignPort(data.port || null);
-  const containerPort = parseInt(data.containerPort, 10) || config.defaultContainerPort;
+  const containerPort = parseInt(data.containerPort, 10);
   const branch = (data.branch || 'main').trim();
   const localPath = getAppDir(safeName);
   const containerName = `rehoster-${safeName}`;
@@ -452,7 +664,10 @@ async function startApp(id) {
   if (!app) throw new Error(`App ${id} not found`);
   await runDockerLifecycleAction(
     app,
-    () => dockerService.startContainer(app.container_name),
+    async () => {
+      await ensureContainerExists(app, 'start app');
+      await dockerService.startContainer(app.container_name);
+    },
     'running',
     'App started'
   );
@@ -463,7 +678,10 @@ async function stopApp(id) {
   if (!app) throw new Error(`App ${id} not found`);
   await runDockerLifecycleAction(
     app,
-    () => dockerService.stopContainer(app.container_name),
+    async () => {
+      await ensureContainerExists(app, 'stop app');
+      await dockerService.stopContainer(app.container_name);
+    },
     'stopped',
     'App stopped'
   );
@@ -474,7 +692,10 @@ async function restartApp(id) {
   if (!app) throw new Error(`App ${id} not found`);
   await runDockerLifecycleAction(
     app,
-    () => dockerService.restartContainer(app.container_name),
+    async () => {
+      await ensureContainerExists(app, 'restart app');
+      await dockerService.restartContainer(app.container_name);
+    },
     'running',
     'App restarted',
     'restarting'
@@ -577,7 +798,12 @@ async function deleteApp(id) {
   }
 
   if (app.local_path && fs.existsSync(app.local_path)) {
-    fs.rmSync(app.local_path, { recursive: true, force: true });
+    try {
+      removeAppDirectory(app.local_path);
+    } catch (err) {
+      logService.addLog(id, 'warn', `Failed to remove local app directory: ${err.message}`);
+      // Continue removing DB records so app deletion is not blocked by filesystem locks.
+    }
   }
 
   db.prepare('DELETE FROM app_logs WHERE app_id = ?').run(id);
@@ -611,6 +837,9 @@ module.exports = {
   getWebhookUrlForApp,
   validateWebhookToken,
   updateAppEnvVars,
+  updateAppDetails,
+  syncAppStatusWithDocker,
+  syncAllAppStatusesWithDocker,
   createApp,
   deployApp,
   startApp,

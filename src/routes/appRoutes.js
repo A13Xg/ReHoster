@@ -84,9 +84,9 @@ router.post('/admin/apps', async (req, res, next) => {
   }
 });
 
-router.get('/admin/apps/:id', (req, res, next) => {
+router.get('/admin/apps/:id', async (req, res, next) => {
   try {
-    const app = appService.getApp(Number(req.params.id));
+    const app = await appService.syncAppStatusWithDocker(Number(req.params.id));
     if (!app) return res.status(404).render('error', { title: 'Not Found', status: 404, message: 'App not found', stack: null });
     const logs = require('../services/logService').getAppLogs(app.id, 50);
     let frameworks = [];
@@ -97,20 +97,48 @@ router.get('/admin/apps/:id', (req, res, next) => {
     const webhookUrl = appService.getWebhookUrlForApp(app);
     const envUpdated = String(req.query.envUpdated || '') === '1';
     const envApplyNow = String(req.query.envApplyNow || '') === '1';
+    const detailsUpdated = String(req.query.detailsUpdated || '') === '1';
+    const detailsRedeploy = String(req.query.detailsRedeploy || '') === '1';
+    const detailsError = String(req.query.detailsError || '').trim();
     res.render('apps/show', {
       title: app.name,
       app,
       logs,
       baseHost: config.baseHost,
       frameworks,
+      groups,
       group,
       envVarsText,
       webhookUrl,
       envUpdated,
       envApplyNow,
+      detailsUpdated,
+      detailsRedeploy,
+      detailsError,
     });
   } catch (err) {
     next(err);
+  }
+});
+
+router.post('/admin/apps/:id/details', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    appService.updateAppDetails(id, req.body || {});
+
+    appService.rebuildApp(id).catch((err) => {
+      logService.addLog(id, 'error', `Background redeploy after details update failed: ${err.message}`);
+      console.error(`Background redeploy after details update failed for app ${id}:`, err.message);
+    });
+
+    return res.redirect(`/admin/apps/${id}?detailsUpdated=1&detailsRedeploy=1`);
+  } catch (err) {
+    const id = Number(req.params.id);
+    const message = encodeURIComponent(err.message || 'Failed to update app details');
+    if (Number.isInteger(id) && id > 0) {
+      return res.redirect(`/admin/apps/${id}?detailsError=${message}`);
+    }
+    return next(err);
   }
 });
 
@@ -464,9 +492,9 @@ router.delete('/admin/apps/:id', async (req, res, next) => {
   }
 });
 
-router.get('/admin/apps/:id/status', (req, res, next) => {
+router.get('/admin/apps/:id/status', async (req, res, next) => {
   try {
-    const app = appService.getApp(Number(req.params.id));
+    const app = await appService.syncAppStatusWithDocker(Number(req.params.id));
     if (!app) return res.status(404).json({ error: 'Not found' });
     return res.json({ id: app.id, status: app.status });
   } catch (err) {

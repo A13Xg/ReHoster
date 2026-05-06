@@ -70,7 +70,9 @@ function validateAppInput(body) {
     }
   }
 
-  if (body.containerPort && String(body.containerPort).trim().length > 0) {
+  if (!body.containerPort || String(body.containerPort).trim().length === 0) {
+    errors.push('Internal container port is required');
+  } else {
     const containerPort = parseInt(String(body.containerPort).trim(), 10);
     if (!Number.isInteger(containerPort) || containerPort < 1 || containerPort > 65535) {
       errors.push('Internal container port must be a valid port number (1-65535)');

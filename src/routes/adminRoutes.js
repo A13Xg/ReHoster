@@ -12,14 +12,15 @@ router.get('/admin', (req, res) => {
   res.redirect('/admin/apps');
 });
 
-router.get('/admin/apps', (req, res, next) => {
+router.get('/admin/apps', async (req, res, next) => {
   try {
-    const apps = appService.getAllApps();
+    const apps = await appService.syncAllAppStatusesWithDocker();
     const groups = appService.getAllGroups();
     const stats = {
       total: apps.length,
       running: apps.filter((a) => a.status === 'running').length,
       stopped: apps.filter((a) => a.status === 'stopped').length,
+      missing: apps.filter((a) => a.status === 'missing').length,
       failed: apps.filter((a) => a.status === 'failed').length,
       building: apps.filter((a) => ['building', 'cloning'].includes(a.status)).length,
     };

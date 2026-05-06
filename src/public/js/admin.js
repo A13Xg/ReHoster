@@ -10,6 +10,7 @@ function getStatusDisplay(status) {
   const icons = {
     running: '●',
     stopped: '■',
+    missing: '⚠',
     failed: '✕',
     creating: '◌',
     cloning: '↧',
@@ -173,6 +174,100 @@ function initCopyButtons() {
         ta.select();
         document.execCommand('copy');
         document.body.removeChild(ta);
+      }
+    });
+  });
+}
+
+// ── Form validation ──
+function getValidationMessage(field) {
+  if (!field) return 'This field is required.';
+  if (field.validity.valueMissing) return 'This field is required.';
+  if (field.validity.tooShort) return `Please enter at least ${field.minLength} characters.`;
+  if (field.validity.typeMismatch) return 'Please enter a valid value.';
+  if (field.validity.patternMismatch) return 'Please match the requested format.';
+  return 'Please correct this field.';
+}
+
+function clearFieldValidation(field) {
+  const group = field.closest('.form-group');
+  field.classList.remove('form-input-error');
+  field.removeAttribute('aria-invalid');
+  if (!group) return;
+
+  group.classList.remove('form-group-error');
+  const error = group.querySelector('.form-error-text');
+  if (error) error.remove();
+}
+
+function markFieldValidation(field, message) {
+  const group = field.closest('.form-group');
+  field.classList.add('form-input-error');
+  field.setAttribute('aria-invalid', 'true');
+  if (!group) return;
+
+  group.classList.add('form-group-error');
+  let error = group.querySelector('.form-error-text');
+  if (!error) {
+    error = document.createElement('small');
+    error.className = 'form-error-text';
+    group.appendChild(error);
+  }
+  error.textContent = message;
+}
+
+function validateForm(form) {
+  const fields = [...form.querySelectorAll('input, select, textarea')]
+    .filter(field => !field.disabled && field.willValidate);
+  let firstInvalid = null;
+
+  fields.forEach(field => clearFieldValidation(field));
+
+  fields.forEach(field => {
+    if (field.checkValidity()) return;
+    markFieldValidation(field, getValidationMessage(field));
+    if (!firstInvalid) firstInvalid = field;
+  });
+
+  return { valid: !firstInvalid, firstInvalid };
+}
+
+function initFormValidation() {
+  document.querySelectorAll('form').forEach(form => {
+    form.noValidate = true;
+
+    const fields = [...form.querySelectorAll('input, select, textarea')]
+      .filter(field => !field.disabled && field.willValidate);
+
+    fields.forEach(field => {
+      const eventName = field.tagName === 'SELECT' || field.type === 'checkbox' || field.type === 'radio'
+        ? 'change'
+        : 'input';
+
+      field.addEventListener(eventName, () => {
+        if (field.checkValidity()) {
+          clearFieldValidation(field);
+        }
+      });
+
+      field.addEventListener('blur', () => {
+        if (!field.checkValidity()) {
+          markFieldValidation(field, getValidationMessage(field));
+        }
+      });
+    });
+
+    form.addEventListener('submit', event => {
+      const result = validateForm(form);
+      if (result.valid) return;
+
+      event.preventDefault();
+      form.classList.remove('form-invalid-shake');
+      void form.offsetWidth;
+      form.classList.add('form-invalid-shake');
+
+      if (result.firstInvalid) {
+        result.firstInvalid.focus();
       }
     });
   });
@@ -366,6 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initLogFeed();
   initCopyButtons();
+  initFormValidation();
   initEnvVault();
   initBulkActions();
   initKeyboardShortcuts();

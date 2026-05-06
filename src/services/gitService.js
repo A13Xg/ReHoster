@@ -3,16 +3,22 @@
 const simpleGit = require('simple-git');
 const { isValidRepoUrl } = require('../utils/validation');
 
-async function cloneRepo(repoUrl, branch, targetPath) {
+async function cloneRepo(repoUrl, branch, targetPath, options = {}) {
   if (!isValidRepoUrl(repoUrl)) {
     throw new Error(`Invalid repository URL: ${repoUrl}`);
   }
   const git = simpleGit();
+  if (options && typeof options.onProgress === 'function') {
+    git.progress((progress) => options.onProgress(progress));
+  }
   await git.clone(repoUrl, targetPath, ['--branch', branch, '--depth', '1']);
 }
 
-async function pullLatest(targetPath, branch) {
+async function pullLatest(targetPath, branch, options = {}) {
   const git = simpleGit(targetPath);
+  if (options && typeof options.onProgress === 'function') {
+    git.progress((progress) => options.onProgress(progress));
+  }
   if (branch) {
     await git.pull('origin', branch);
     return;

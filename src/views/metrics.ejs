@@ -2,67 +2,218 @@
 
 <div class="page-header">
   <h1 class="page-title">📊 System Metrics</h1>
-  <a href="/metrics.json" class="btn btn-secondary btn-sm" target="_blank">JSON</a>
+  <div class="header-actions" style="display:flex; gap:0.5rem; align-items:center;">
+    <label class="text-muted" for="rangeSlider" style="font-size:0.85rem;">Range</label>
+    <input id="rangeSlider" type="range" min="1" max="168" value="24" style="width:160px;" />
+    <span id="rangeLabel" class="text-muted" style="min-width:90px; font-size:0.85rem;">24h</span>
+    <button id="refreshMetricsBtn" class="btn btn-secondary btn-sm" type="button">Refresh</button>
+    <a href="/metrics.json" class="btn btn-secondary btn-sm" target="_blank">JSON</a>
+  </div>
 </div>
 
-<div class="card" style="margin-bottom:1.5rem;">
-  <div class="card-header"><h2>System — Last 60 Data Points</h2></div>
-  <% if (!systemMetrics || systemMetrics.length === 0) { %>
-    <div class="empty-state"><p>No metrics collected yet. Metrics are collected every 60 seconds.</p></div>
-  <% } else { %>
-    <div class="metrics-latest">
-      <% var latest = systemMetrics[0]; %>
+<% if (!systemMetrics || systemMetrics.length === 0) { %>
+  <div class="card">
+    <div class="empty-state"><p>No metrics collected yet. Metrics are collected every 30 seconds.</p></div>
+  </div>
+<% } else { %>
+  <% var latest = systemMetrics[0]; %>
+  <% var memPct = latest.mem_total_mb > 0 ? Math.min(100, Math.round((latest.mem_used_mb / latest.mem_total_mb) * 100)) : 0; %>
+  <% var diskPct = latest.disk_total_gb > 0 ? Math.min(100, Math.round((latest.disk_used_gb / latest.disk_total_gb) * 100)) : 0; %>
+
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-header"><h2>Live Snapshot</h2></div>
+    <div class="metrics-latest" style="padding:1rem; grid-template-columns: repeat(3, minmax(180px, 1fr));">
       <div class="metric-card">
-        <div class="metric-label">CPU</div>
-        <div class="metric-value"><%= latest.cpu_percent %>%</div>
+        <div class="metric-label">CPU Load</div>
+        <div class="metric-value" id="cpuNow"><%= latest.cpu_percent %>%</div>
+        <div class="progress" style="margin-top:0.5rem;"><div id="cpuBar" class="progress-bar" style="width:<%= latest.cpu_percent %>%;"></div></div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Memory</div>
-        <div class="metric-value"><%= latest.mem_used_mb %> / <%= latest.mem_total_mb %> MB</div>
+        <div class="metric-value" id="memNow"><%= latest.mem_used_mb %> / <%= latest.mem_total_mb %> MB</div>
+        <div class="progress" style="margin-top:0.5rem;"><div id="memBar" class="progress-bar" style="width:<%= memPct %>%;"></div></div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Disk</div>
-        <div class="metric-value"><%= latest.disk_used_gb %> / <%= latest.disk_total_gb %> GB</div>
+        <div class="metric-value" id="diskNow"><%= latest.disk_used_gb %> / <%= latest.disk_total_gb %> GB</div>
+        <div class="progress" style="margin-top:0.5rem;"><div id="diskBar" class="progress-bar" style="width:<%= diskPct %>%;"></div></div>
       </div>
     </div>
-    <div class="metrics-table-wrap">
-      <table class="table" style="margin-top:1rem;">
-        <thead>
-          <tr><th>Time</th><th>CPU %</th><th>Mem Used</th><th>Mem Total</th><th>Disk Used</th><th>Disk Total</th></tr>
-        </thead>
-        <tbody>
-          <% systemMetrics.slice(0,20).forEach(function(m) { %>
-            <tr>
-              <td class="text-muted"><%= formatDate(m.timestamp) %></td>
-              <td><%= m.cpu_percent %>%</td>
-              <td><%= m.mem_used_mb %> MB</td>
-              <td><%= m.mem_total_mb %> MB</td>
-              <td><%= m.disk_used_gb %> GB</td>
-              <td><%= m.disk_total_gb %> GB</td>
-            </tr>
-          <% }) %>
-        </tbody>
-      </table>
+    <div style="padding:0 1rem 1rem; font-size:0.85rem; color:var(--text-muted);">
+      Last sample: <span id="lastSampleTime"><%= formatDate(latest.timestamp) %></span>
     </div>
-  <% } %>
-</div>
+  </div>
 
-<% if (appMetrics && appMetrics.length > 0) { %>
-<div class="card">
-  <div class="card-header"><h2>Per-App Metrics (last hour avg)</h2></div>
-  <table class="table">
-    <thead><tr><th>App ID</th><th>Avg CPU %</th><th>Avg Mem (MB)</th></tr></thead>
-    <tbody>
-      <% appMetrics.forEach(function(m) { %>
-        <tr>
-          <td><a href="/admin/apps/<%= m.app_id %>"><%= m.app_id %></a></td>
-          <td><%= Math.round(m.avg_cpu) %>%</td>
-          <td><%= Math.round(m.avg_mem) %> MB</td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
-</div>
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-header"><h2>Trends</h2></div>
+    <div style="padding:1rem; display:grid; gap:1rem;">
+      <div>
+        <div class="text-muted" style="margin-bottom:0.35rem; font-size:0.85rem;">CPU % over time</div>
+        <div style="height:180px;"><canvas id="cpuChart"></canvas></div>
+      </div>
+      <div>
+        <div class="text-muted" style="margin-bottom:0.35rem; font-size:0.85rem;">Memory MB over time</div>
+        <div style="height:180px;"><canvas id="memChart"></canvas></div>
+      </div>
+      <div>
+        <div class="text-muted" style="margin-bottom:0.35rem; font-size:0.85rem;">Disk GB over time</div>
+        <div style="height:180px;"><canvas id="diskChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-header"><h2>Resource Scales</h2></div>
+    <div style="padding:1rem; display:grid; gap:0.85rem;">
+      <div>
+        <div style="display:flex; justify-content:space-between; font-size:0.85rem;"><span>CPU</span><span id="cpuScaleText"><%= latest.cpu_percent %>%</span></div>
+        <input id="cpuScale" type="range" min="0" max="100" step="1" value="<%= latest.cpu_percent %>" disabled style="width:100%;" />
+      </div>
+      <div>
+        <div style="display:flex; justify-content:space-between; font-size:0.85rem;"><span>Memory</span><span id="memScaleText"><%= memPct %>%</span></div>
+        <input id="memScale" type="range" min="0" max="100" step="1" value="<%= memPct %>" disabled style="width:100%;" />
+      </div>
+      <div>
+        <div style="display:flex; justify-content:space-between; font-size:0.85rem;"><span>Disk</span><span id="diskScaleText"><%= diskPct %>%</span></div>
+        <input id="diskScale" type="range" min="0" max="100" step="1" value="<%= diskPct %>" disabled style="width:100%;" />
+      </div>
+    </div>
+  </div>
+
+  <% if (appMetrics && appMetrics.length > 0) { %>
+  <div class="card">
+    <div class="card-header"><h2>Per-App Metrics (last hour avg)</h2></div>
+    <table class="table">
+      <thead><tr><th>App ID</th><th>Avg CPU %</th><th>Avg Mem (MB)</th></tr></thead>
+      <tbody>
+        <% appMetrics.forEach(function(m) { %>
+          <tr>
+            <td><a href="/admin/apps/<%= m.app_id %>"><%= m.app_id %></a></td>
+            <td><%= Math.round(m.avg_cpu) %>%</td>
+            <td><%= Math.round(m.avg_mem) %> MB</td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+  <% } %>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    (function () {
+      const locale = <%- JSON.stringify(locale || 'en-US') %>;
+      const timezone = <%- JSON.stringify(timezone || 'UTC') %>;
+      let rangeSeconds = 24 * 3600;
+      let cpuChart;
+      let memChart;
+      let diskChart;
+
+      function fmtTime(value) {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString(locale, { timeZone: timezone, hour: '2-digit', minute: '2-digit' });
+      }
+
+      function renderScales(series) {
+        const i = (series.cpu || []).length - 1;
+        if (i < 0) return;
+        const cpu = Number(series.cpu[i] || 0);
+        const memUsed = Number(series.memUsed[i] || 0);
+        const memTotal = Number(series.memTotal || 0);
+        const diskUsed = Number(series.diskUsed[i] || 0);
+        const diskTotal = Number(series.diskTotal || 0);
+        const memPct = memTotal > 0 ? Math.min(100, Math.round((memUsed / memTotal) * 100)) : 0;
+        const diskPct = diskTotal > 0 ? Math.min(100, Math.round((diskUsed / diskTotal) * 100)) : 0;
+
+        document.getElementById('cpuNow').textContent = `${cpu}%`;
+        document.getElementById('memNow').textContent = `${memUsed} / ${memTotal} MB`;
+        document.getElementById('diskNow').textContent = `${diskUsed} / ${diskTotal} GB`;
+        document.getElementById('cpuBar').style.width = `${cpu}%`;
+        document.getElementById('memBar').style.width = `${memPct}%`;
+        document.getElementById('diskBar').style.width = `${diskPct}%`;
+
+        document.getElementById('cpuScale').value = cpu;
+        document.getElementById('memScale').value = memPct;
+        document.getElementById('diskScale').value = diskPct;
+        document.getElementById('cpuScaleText').textContent = `${cpu}%`;
+        document.getElementById('memScaleText').textContent = `${memPct}%`;
+        document.getElementById('diskScaleText').textContent = `${diskPct}%`;
+
+        const ts = (series.timestamps || [])[i];
+        if (ts) document.getElementById('lastSampleTime').textContent = fmtTime(ts);
+      }
+
+      function chartOptions() {
+        return {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { maxTicksLimit: 8, color: '#8a8da0' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#8a8da0' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          },
+        };
+      }
+
+      function updateCharts(series) {
+        const labels = (series.timestamps || []).map(fmtTime);
+
+        if (!cpuChart) {
+          cpuChart = new Chart(document.getElementById('cpuChart'), {
+            type: 'line',
+            data: { labels, datasets: [{ data: series.cpu || [], borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.16)', pointRadius: 0, tension: 0.25, fill: true }] },
+            options: chartOptions(),
+          });
+          memChart = new Chart(document.getElementById('memChart'), {
+            type: 'line',
+            data: { labels, datasets: [{ data: series.memUsed || [], borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.16)', pointRadius: 0, tension: 0.25, fill: true }] },
+            options: chartOptions(),
+          });
+          diskChart = new Chart(document.getElementById('diskChart'), {
+            type: 'line',
+            data: { labels, datasets: [{ data: series.diskUsed || [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.16)', pointRadius: 0, tension: 0.25, fill: true }] },
+            options: chartOptions(),
+          });
+        } else {
+          cpuChart.data.labels = labels;
+          cpuChart.data.datasets[0].data = series.cpu || [];
+          cpuChart.update('none');
+          memChart.data.labels = labels;
+          memChart.data.datasets[0].data = series.memUsed || [];
+          memChart.update('none');
+          diskChart.data.labels = labels;
+          diskChart.data.datasets[0].data = series.diskUsed || [];
+          diskChart.update('none');
+        }
+
+        renderScales(series);
+      }
+
+      async function refresh() {
+        try {
+          const res = await fetch(`/metrics.json?range=${rangeSeconds}`, { cache: 'no-store' });
+          const payload = await res.json();
+          updateCharts(payload.timeseries || {});
+        } catch (err) {
+          console.error('Metrics refresh failed:', err);
+        }
+      }
+
+      const rangeSlider = document.getElementById('rangeSlider');
+      const rangeLabel = document.getElementById('rangeLabel');
+      rangeSlider.addEventListener('input', function () {
+        const hours = Number(rangeSlider.value || 24);
+        rangeSeconds = hours * 3600;
+        rangeLabel.textContent = hours >= 24 ? `${Math.round(hours / 24)}d` : `${hours}h`;
+      });
+      rangeSlider.addEventListener('change', refresh);
+      document.getElementById('refreshMetricsBtn').addEventListener('click', refresh);
+
+      const initialSeries = <%- chartsData && chartsData.lastDay ? chartsData.lastDay : '{}' %>;
+      updateCharts(initialSeries);
+      setInterval(refresh, 30000);
+    })();
+  </script>
 <% } %>
 
 <%- include('partials/footer') %>
