@@ -118,8 +118,8 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; 
 }
 
 .brand-icon {
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 6rem;
+  height: 6rem;
   object-fit: contain;
   -webkit-text-fill-color: initial;
 }

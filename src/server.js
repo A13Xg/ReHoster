@@ -51,13 +51,13 @@ async function main() {
     logger.warn({ err }, 'Failed to prune old logs on startup');
   }
 
-  // Periodic metrics collection every 60 seconds
+  // Periodic metrics collection every 30 seconds
   const metricsService = require('./services/metricsService');
   setInterval(async () => {
     try {
       await metricsService.collectSystemMetrics();
     } catch {}
-  }, 60 * 1000);
+  }, 30 * 1000);
 
   // Health checks every 5 minutes
   const healthService = require('./services/healthService');
@@ -87,6 +87,22 @@ async function main() {
     }
   } catch (err) {
     logger.warn({ err }, 'Failed to configure automatic repo update checks');
+  }
+
+  // Periodic ReHoster panel self-update checks (every 6 hours)
+  try {
+    const updateService = require('./services/updateService');
+    setInterval(async () => {
+      try {
+        await updateService.checkForUpdates();
+        logger.debug('ReHoster update check completed');
+      } catch (err) {
+        logger.debug({ err }, 'ReHoster update check error (non-fatal)');
+      }
+    }, 6 * 60 * 60 * 1000);
+    logger.info('ReHoster self-update checks scheduled every 6 hours');
+  } catch (err) {
+    logger.warn({ err }, 'Failed to configure ReHoster self-update checks');
   }
 
   app.listen(config.port, () => {

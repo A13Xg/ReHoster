@@ -30,7 +30,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.get('/favicon.ico', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'media', 'Re-HosterLogo.ico'));
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.send('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="80" font-size="90" text-anchor="middle" fill="#818cf8">⚡</text></svg>');
 });
 
 // Security headers

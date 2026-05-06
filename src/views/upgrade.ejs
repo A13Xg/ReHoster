@@ -11,7 +11,30 @@
       <span class="detail-label">Current Version</span>
       <span class="detail-value"><code><%= currentVersion %></code></span>
     </div>
+    <% if (updateStatus && updateStatus.latest) { %>
+      <div class="detail-row">
+        <span class="detail-label">Latest Release</span>
+        <span class="detail-value">
+          <code><%= updateStatus.latest %></code>
+          <% if (updateStatus.updateAvailable) { %>
+            <span class="badge badge-warning" style="margin-left:0.5rem;">Update Available</span>
+          <% } %>
+        </span>
+      </div>
+    <% } %>
   </div>
+
+  <% if (updateStatus && updateStatus.error) { %>
+    <div class="alert alert-danger" style="margin:1rem;">
+      GitHub check failed: <%= updateStatus.error %>
+    </div>
+  <% } %>
+
+  <% if (updateStatus && updateStatus.message && !updateStatus.error) { %>
+    <div class="alert <%= updateStatus.updateAvailable ? 'alert-warning' : 'alert-success' %>" style="margin:1rem;">
+      <%= updateStatus.message %>
+    </div>
+  <% } %>
 
   <% if (checkResult) { %>
     <div class="alert <%= checkResult.hasUpdates ? 'alert-warning' : 'alert-success' %>" style="margin:1rem 0;">
