@@ -78,6 +78,7 @@ async function init() {
   addColumnIfMissing(db, 'apps', 'tags', 'TEXT');
   addColumnIfMissing(db, 'apps', 'webhook_url', 'TEXT');
   addColumnIfMissing(db, 'apps', 'restart_schedule', 'TEXT');
+  addColumnIfMissing(db, 'apps', 'post_start_command', 'TEXT');
 
   // Seed default settings (INSERT OR IGNORE = won't overwrite existing)
   const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

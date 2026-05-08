@@ -6,23 +6,39 @@
     <span id="appStatusBadge"><%- include('../partials/status-badge', {status: app.status}) %></span>
   </div>
   <div class="header-actions">
-    <button class="btn btn-secondary btn-active" id="autoRefreshBtn" onclick="toggleAutoRefresh()">⟳ Auto-Refresh: ON (3s)</button>
-    <button class="btn btn-secondary" onclick="location.reload()">↺ Refresh Now</button>
+    <button class="btn btn-secondary btn-active" id="autoRefreshBtn" onclick="toggleAutoRefresh()" title="Toggle automatic log refresh">⟳ Auto-Refresh: ON (3s)</button>
+    <button class="btn btn-secondary" onclick="location.reload()" title="Refresh page now">↺ Refresh Now</button>
     <a href="/admin/apps/<%= app.id %>" class="btn btn-secondary">← Back to App</a>
   </div>
 </div>
 
+<!-- ── Deployment Logs ──────────────────────────────────────────────────── -->
 <div class="card">
-  <div class="card-header">
-    <h2>Deployment Logs</h2>
-    <span class="text-muted" id="deployLogsCount"><%= dbLogs ? dbLogs.length : 0 %> entries</span>
+  <div class="card-header log-card-header">
+    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+      <h2>Deployment Logs</h2>
+      <span class="text-muted" id="deployLogsCount"><%= dbLogs ? dbLogs.length : 0 %> entries</span>
+    </div>
+    <div class="log-toolbar">
+      <div class="log-search-wrap">
+        <input type="text" id="deploySearchInput" class="log-search" placeholder="🔍 Filter logs…" oninput="filterLogs('deploy')" />
+      </div>
+      <div class="log-level-filters">
+        <label class="log-lvl-btn" title="Toggle INFO"><input type="checkbox" id="flt-deploy-info" checked onchange="filterLogs('deploy')" /><span>INFO</span></label>
+        <label class="log-lvl-btn" title="Toggle WARN"><input type="checkbox" id="flt-deploy-warn" checked onchange="filterLogs('deploy')" /><span>WARN</span></label>
+        <label class="log-lvl-btn" title="Toggle ERROR"><input type="checkbox" id="flt-deploy-error" checked onchange="filterLogs('deploy')" /><span>ERROR</span></label>
+      </div>
+      <button class="btn btn-sm btn-secondary" onclick="clearLogViewer('deployLogs')" title="Clear visible log output">🗑 Clear</button>
+      <button class="btn btn-sm btn-secondary" onclick="copyLogs('deployLogs')" title="Copy all log text to clipboard">📋 Copy</button>
+      <button class="btn btn-sm btn-secondary" onclick="downloadLogs('deployLogs', 'deploy-logs.txt')" title="Download logs as a text file">⬇ Download</button>
+    </div>
   </div>
-  <div class="log-viewer" id="deployLogs">
+  <div class="log-viewer log-viewer-deploy" id="deployLogs">
     <% if (!dbLogs || dbLogs.length === 0) { %>
       <div class="log-line"><span class="log-msg text-muted">No deployment logs yet.</span></div>
     <% } else { %>
       <% dbLogs.slice().reverse().forEach(function(log) { %>
-        <div class="log-line log-<%= log.level %>" data-log-id="<%= log.id %>">
+        <div class="log-line log-<%= log.level %>" data-log-id="<%= log.id %>" data-level="<%= log.level %>">
           <span class="log-time"><%= formatDate(log.created_at) %></span>
           <span class="log-level">[<%= log.level.toUpperCase() %>]</span>
           <span class="log-msg"><%= log.message %></span>
@@ -32,10 +48,21 @@
   </div>
 </div>
 
+<!-- ── Container Runtime Logs ─────────────────────────────────────────── -->
 <div class="card" style="margin-top: 1.5rem;">
-  <div class="card-header">
-    <h2>Container Runtime Logs</h2>
-    <small class="text-muted">Last 200 lines from <code><%= app.container_name %></code></small>
+  <div class="card-header log-card-header">
+    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+      <h2>Container Runtime Logs</h2>
+      <small class="text-muted">Last 200 lines from <code><%= app.container_name %></code></small>
+    </div>
+    <div class="log-toolbar">
+      <div class="log-search-wrap">
+        <input type="text" id="dockerSearchInput" class="log-search" placeholder="🔍 Filter output…" oninput="filterDockerLogs()" />
+      </div>
+      <button class="btn btn-sm btn-secondary" onclick="clearLogViewer('dockerLogs')" title="Clear visible docker log output">🗑 Clear</button>
+      <button class="btn btn-sm btn-secondary" onclick="copyLogs('dockerLogs')" title="Copy container logs to clipboard">📋 Copy</button>
+      <button class="btn btn-sm btn-secondary" onclick="downloadLogs('dockerLogs', 'container-logs.txt')" title="Download container logs as a text file">⬇ Download</button>
+    </div>
   </div>
   <div class="log-viewer log-viewer-docker" id="dockerLogs">
     <% if (!dockerLogs || dockerLogs.trim().length === 0) { %>
@@ -43,7 +70,7 @@
     <% } else { %>
       <% dockerLogs.split('\n').forEach(function(line) { %>
         <% if (line.trim()) { %>
-          <div class="log-line"><span class="log-msg"><%= line %></span></div>
+          <div class="log-line docker-log-line"><span class="log-msg"><%= line %></span></div>
         <% } %>
       <% }) %>
     <% } %>
@@ -55,18 +82,12 @@
   var appId = <%= app.id %>;
   var lastDeployLogId = 0;
 
+  /* ── Status badge ───────────────────────────────────────────────────────── */
   function getStatusMeta(status) {
     var value = String(status || 'unknown').toLowerCase();
     var icons = {
-      running: '●',
-      stopped: '■',
-      failed: '✕',
-      creating: '◌',
-      cloning: '↧',
-      building: '⌛',
-      staging: '◔',
-      restarting: '↺',
-      unknown: '?'
+      running: '●', stopped: '■', failed: '✕', creating: '◌',
+      cloning: '↧', building: '⌛', staging: '◔', restarting: '↺', unknown: '?'
     };
     return { value: value, icon: icons[value] || icons.unknown };
   }
@@ -79,23 +100,54 @@
     return '<span class="badge badge-' + meta.value + pulse + shake + working + '" data-status="' + meta.value + '"><span class="badge-icon">' + meta.icon + '</span>' + meta.value + '</span>';
   }
 
+  /* ── Auto-scroll ────────────────────────────────────────────────────────── */
   function scrollToBottom(el) {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }
 
+  /* ── ANSI colour strip ──────────────────────────────────────────────────── */
+  var ANSI_STRIP_RE = /\x1b\[[0-9;]*[mGKHF]/g;
+  function stripAnsi(text) {
+    return String(text || '').replace(ANSI_STRIP_RE, '');
+  }
+
+  /* ── Build a single deploy log line DOM node ────────────────────────────── */
+  function makeDeployLine(log) {
+    var line = document.createElement('div');
+    line.className = 'log-line log-' + (log.level || 'info');
+    line.setAttribute('data-log-id', String(log.id || '0'));
+    line.setAttribute('data-level', String(log.level || 'info'));
+
+    var time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = log.created_at ? new Date(log.created_at).toLocaleString() : '';
+
+    var level = document.createElement('span');
+    level.className = 'log-level';
+    level.textContent = '[' + String(log.level || 'info').toUpperCase() + ']';
+
+    var msg = document.createElement('span');
+    msg.className = 'log-msg';
+    msg.textContent = stripAnsi(log.message || '');
+
+    line.appendChild(time);
+    line.appendChild(level);
+    line.appendChild(msg);
+    return line;
+  }
+
+  /* ── Update deployment logs panel ───────────────────────────────────────── */
   function updateDeployLogs(dbLogs, replaceAll) {
     var container = document.getElementById('deployLogs');
-    var count = document.getElementById('deployLogsCount');
-    if (!container || !count) return;
+    var countEl = document.getElementById('deployLogsCount');
+    if (!container || !countEl) return;
 
     var logs = Array.isArray(dbLogs) ? dbLogs : [];
-    if (replaceAll) {
-      container.innerHTML = '';
-    }
+    if (replaceAll) container.innerHTML = '';
 
     if (!logs.length && replaceAll) {
-      count.textContent = '0 entries';
+      countEl.textContent = '0 entries';
       var emptyLine = document.createElement('div');
       emptyLine.className = 'log-line';
       var emptyMsg = document.createElement('span');
@@ -107,53 +159,33 @@
     }
 
     if (!replaceAll) {
-      var empty = container.querySelector('.log-msg.text-muted');
-      if (empty && empty.textContent.indexOf('No deployment logs yet.') >= 0) {
+      var emptyPlaceholder = container.querySelector('.log-msg.text-muted');
+      if (emptyPlaceholder && emptyPlaceholder.textContent.indexOf('No deployment logs') >= 0) {
         container.innerHTML = '';
       }
     }
 
-    var currentCount = container.querySelectorAll('[data-log-id]').length;
-
+    var added = 0;
     logs.forEach(function(log) {
       if (!replaceAll && log.id <= lastDeployLogId) return;
-      var line = document.createElement('div');
-      line.className = 'log-line log-' + (log.level || 'info');
-      line.setAttribute('data-log-id', String(log.id || '0'));
-
-      var time = document.createElement('span');
-      time.className = 'log-time';
-      time.textContent = log.created_at ? new Date(log.created_at).toLocaleString() : '';
-
-      var level = document.createElement('span');
-      level.className = 'log-level';
-      level.textContent = '[' + String(log.level || 'info').toUpperCase() + ']';
-
-      var msg = document.createElement('span');
-      msg.className = 'log-msg';
-      msg.textContent = log.message || '';
-
-      line.appendChild(time);
-      line.appendChild(level);
-      line.appendChild(msg);
-      container.appendChild(line);
-
-      if (log.id && log.id > lastDeployLogId) {
-        lastDeployLogId = log.id;
-      }
-      currentCount += 1;
+      container.appendChild(makeDeployLine(log));
+      if (log.id && log.id > lastDeployLogId) lastDeployLogId = log.id;
+      added += 1;
     });
 
-    count.textContent = currentCount + ' entries';
-    scrollToBottom(container);
+    var total = container.querySelectorAll('[data-log-id]').length;
+    countEl.textContent = total + ' entries';
+    if (added > 0) scrollToBottom(container);
+    applyDeployFilters();
   }
 
+  /* ── Update docker runtime logs panel ───────────────────────────────────── */
   function updateDockerLogs(rawLogs) {
     var container = document.getElementById('dockerLogs');
     if (!container) return;
     container.innerHTML = '';
 
-    var lines = String(rawLogs || '').split('\n').filter(function(line) { return line.trim().length > 0; });
+    var lines = stripAnsi(String(rawLogs || '')).split('\n').filter(function(l) { return l.trim().length > 0; });
     if (!lines.length) {
       var emptyLine = document.createElement('div');
       emptyLine.className = 'log-line';
@@ -167,7 +199,7 @@
 
     lines.forEach(function(lineText) {
       var line = document.createElement('div');
-      line.className = 'log-line';
+      line.className = 'log-line docker-log-line';
       var msg = document.createElement('span');
       msg.className = 'log-msg';
       msg.textContent = lineText;
@@ -176,13 +208,91 @@
     });
 
     scrollToBottom(container);
+    applyDockerFilter();
   }
 
+  /* ── Filter helpers ─────────────────────────────────────────────────────── */
+  function applyDeployFilters() {
+    var query = (document.getElementById('deploySearchInput') && document.getElementById('deploySearchInput').value || '').toLowerCase();
+    var showInfo = document.getElementById('flt-deploy-info') ? document.getElementById('flt-deploy-info').checked : true;
+    var showWarn = document.getElementById('flt-deploy-warn') ? document.getElementById('flt-deploy-warn').checked : true;
+    var showError = document.getElementById('flt-deploy-error') ? document.getElementById('flt-deploy-error').checked : true;
+
+    var container = document.getElementById('deployLogs');
+    if (!container) return;
+    var lines = container.querySelectorAll('.log-line[data-log-id]');
+    lines.forEach(function(line) {
+      var level = (line.getAttribute('data-level') || 'info').toLowerCase();
+      var text = (line.textContent || '').toLowerCase();
+      var levelVisible = (level === 'info' && showInfo) || (level === 'warn' && showWarn) || (level === 'error' && showError) || !['info','warn','error'].includes(level);
+      var textVisible = !query || text.indexOf(query) >= 0;
+      line.style.display = (levelVisible && textVisible) ? '' : 'none';
+    });
+  }
+
+  function applyDockerFilter() {
+    var query = (document.getElementById('dockerSearchInput') && document.getElementById('dockerSearchInput').value || '').toLowerCase();
+    var container = document.getElementById('dockerLogs');
+    if (!container) return;
+    var lines = container.querySelectorAll('.docker-log-line');
+    lines.forEach(function(line) {
+      var text = (line.textContent || '').toLowerCase();
+      line.style.display = (!query || text.indexOf(query) >= 0) ? '' : 'none';
+    });
+  }
+
+  function filterLogs(panel) {
+    if (panel === 'deploy') applyDeployFilters();
+    else applyDockerFilter();
+  }
+
+  function filterDockerLogs() { applyDockerFilter(); }
+
+  /* ── Utility actions ────────────────────────────────────────────────────── */
+  function clearLogViewer(id) {
+    var container = document.getElementById(id);
+    if (!container) return;
+    container.innerHTML = '<div class="log-line"><span class="log-msg text-muted">Log display cleared.</span></div>';
+  }
+
+  function copyLogs(id) {
+    var container = document.getElementById(id);
+    if (!container) return;
+    var lines = container.querySelectorAll('.log-line');
+    var text = Array.from(lines).map(function(l) { return l.textContent.trim(); }).join('\n');
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).catch(function() {});
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch {}
+      document.body.removeChild(ta);
+    }
+  }
+
+  function downloadLogs(id, filename) {
+    var container = document.getElementById(id);
+    if (!container) return;
+    var lines = container.querySelectorAll('.log-line');
+    var text = Array.from(lines).map(function(l) { return l.textContent.trim(); }).join('\n');
+    var blob = new Blob([text], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename || 'logs.txt';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() { URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+  }
+
+  /* ── Polling ────────────────────────────────────────────────────────────── */
   function pollLogs() {
     var url = '/admin/apps/' + appId + '/logs/data?since=' + encodeURIComponent(String(lastDeployLogId || 0));
     fetch(url, { credentials: 'same-origin' })
       .then(function(r) {
-        if (!r.ok) throw new Error('Failed to fetch logs');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       })
       .then(function(data) {
@@ -208,13 +318,15 @@
     }
   }
 
+  /* ── Init ───────────────────────────────────────────────────────────────── */
   autoRefreshInterval = setInterval(pollLogs, 3000);
 
-  // Scroll log viewers to bottom
+  // Scroll both viewers to the bottom on first load.
   document.querySelectorAll('.log-viewer').forEach(function(el) {
     el.scrollTop = el.scrollHeight;
   });
 
+  // Seed lastDeployLogId from the server-rendered HTML.
   (function initLogState() {
     var logRows = document.querySelectorAll('#deployLogs [data-log-id]');
     var count = logRows.length;

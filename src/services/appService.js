@@ -307,8 +307,8 @@ function updateAppDetails(id, payload) {
   }
 
   const serviceType = String(payload.service_type || 'auto').trim();
-  if (!['auto', 'node', 'static'].includes(serviceType)) {
-    throw new Error('Service type must be auto, node, or static');
+  if (!['auto', 'node', 'static', 'python'].includes(serviceType)) {
+    throw new Error('Service type must be auto, node, static, or python');
   }
 
   const groupId = payload.group_id && String(payload.group_id).trim().length > 0
@@ -329,6 +329,7 @@ function updateAppDetails(id, payload) {
   const startCommand = payload.startCommand ? String(payload.startCommand).trim() : '';
   const cpuLimit = payload.cpu_limit ? String(payload.cpu_limit).trim() : null;
   const memoryLimit = payload.memory_limit ? String(payload.memory_limit).trim() : null;
+  const postStartCommand = payload.post_start_command ? String(payload.post_start_command).trim().slice(0, 500) : null;
 
   db.prepare(
     `UPDATE apps SET
@@ -346,6 +347,7 @@ function updateAppDetails(id, payload) {
       tags = ?,
       cpu_limit = ?,
       memory_limit = ?,
+      post_start_command = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ?`
   ).run(
@@ -363,6 +365,7 @@ function updateAppDetails(id, payload) {
     tags,
     cpuLimit,
     memoryLimit,
+    postStartCommand,
     id
   );
 
@@ -536,6 +539,7 @@ async function createApp(data) {
   const memoryLimit = data.memory_limit ? String(data.memory_limit).trim() : null;
   const webhookUrl = data.webhook_url ? String(data.webhook_url).trim().slice(0, 500) : null;
   const restartSchedule = data.restart_schedule ? String(data.restart_schedule).trim().slice(0, 200) : null;
+  const postStartCommand = data.post_start_command ? String(data.post_start_command).trim().slice(0, 500) : null;
 
   const result = db
     .prepare(
@@ -543,8 +547,8 @@ async function createApp(data) {
         (name, safe_name, repo_url, branch, local_path, port, container_port,
          container_name, image_name, build_command, start_command, env_vars, status,
          description, group_id, public_hostname, service_type, tags, cpu_limit,
-         memory_limit, webhook_url, restart_schedule)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         memory_limit, webhook_url, restart_schedule, post_start_command)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       name, safeName, String(data.repoUrl).trim(), branch, localPath, port, containerPort,
@@ -553,7 +557,7 @@ async function createApp(data) {
       data.startCommand || 'npm start',
       envVarsJson,
       description, groupId, publicHostname, serviceType, tags, cpuLimit,
-      memoryLimit, webhookUrl, restartSchedule
+      memoryLimit, webhookUrl, restartSchedule, postStartCommand
     );
 
   const createdApp = db.prepare('SELECT * FROM apps WHERE id = ?').get(result.lastInsertRowid);
@@ -649,6 +653,33 @@ async function deployApp(appId) {
       await healthService.checkAppHealth(getApp(appId));
     } catch (err) {
       log('warn', `Post-deploy health check failed: ${err.message}`);
+    }
+
+    // Run the post-start command (if configured) after the container is verified running.
+    // This is intentionally fire-and-forget inside the deployment so it does not block
+    // the "running" status update, but we await container readiness first.
+    const postStartCmd = app.post_start_command ? String(app.post_start_command).trim() : '';
+    if (postStartCmd) {
+      (async () => {
+        try {
+          // Wait up to 30 s for the container to be healthy/ready before running the command.
+          await dockerService.waitForContainerRunning(app.container_name, 30000);
+          log('info', `Running post-start command: ${postStartCmd}`);
+          const { runCommand } = require('../utils/shell');
+          const result = await runCommand(
+            'docker',
+            ['exec', app.container_name, 'sh', '-c', postStartCmd],
+            { timeout: 60000 }
+          );
+          if (result.exitCode === 0) {
+            log('info', `Post-start command succeeded: ${(result.stdout || '').slice(0, 500)}`);
+          } else {
+            log('warn', `Post-start command exited ${result.exitCode}: ${((result.stderr || result.stdout) || '').slice(0, 500)}`);
+          }
+        } catch (err) {
+          log('warn', `Post-start command failed: ${err.message}`);
+        }
+      })();
     }
 
     log('info', `App "${app.name}" deployed successfully and running on port ${app.port}`);

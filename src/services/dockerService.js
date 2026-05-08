@@ -580,13 +580,40 @@ async function generateDockerfile(appPath, serviceType, detectedFrameworks, buil
     }
   } catch {}
 
+  // Determine the primary language from the framework detection result.
+  const primaryLanguage = (frameworks[0] && frameworks[0].language) || null;
+  const isPythonProject = serviceType === 'python'
+    || primaryLanguage === 'python'
+    || (!primaryLanguage && analyzeDependencyManifests(appPath).hasPythonManifest);
+
   const manifestReport = analyzeDependencyManifests(appPath);
   const hasPackageJson = manifestReport.hasPackageJson;
+  const resolvedContainerPort = containerPort || config.defaultContainerPort;
+
+  // ── Python project path ───────────────────────────────────────────────────
+  if (isPythonProject && !hasPackageJson) {
+    const content = buildPythonDockerfile({
+      appPath,
+      startCommand,
+      containerPort: resolvedContainerPort,
+    });
+
+    let shouldWrite = !fs.existsSync(dockerfilePath);
+    if (!shouldWrite) {
+      const existing = fs.readFileSync(dockerfilePath, 'utf8');
+      shouldWrite = existing.includes(GENERATED_DOCKERFILE_MARKER) || isLegacyGeneratedDockerfile(existing);
+    }
+    if (shouldWrite) {
+      fs.writeFileSync(dockerfilePath, content, 'utf8');
+    }
+    return;
+  }
+
+  // ── Node.js / static project path ────────────────────────────────────────
   const packageScripts = readPackageScripts(appPath);
   const hasBuildScript = typeof packageScripts.build === 'string' && packageScripts.build.trim().length > 0;
   const installPlan = getNodeInstallPlan(appPath);
   const pythonInstallCommand = getPythonDependencyInstallCommand(appPath);
-  const resolvedContainerPort = containerPort || config.defaultContainerPort;
   const isStatic = shouldUseStaticContainer(serviceType, frameworks);
 
   if (!hasPackageJson && !isStatic) {
@@ -639,6 +666,122 @@ async function removeImage(imageName) {
   return runCommand(DOCKER_CMD, ['rmi', '-f', imageName], { timeout: 30000 });
 }
 
+/**
+ * Wait until a container reaches the "running" state (or the timeout is hit).
+ *
+ * Polls `docker inspect` every `intervalMs` milliseconds up to `timeoutMs`.
+ * Resolves when the container is running; rejects on timeout.
+ *
+ * @param {string} containerName - Docker container name to poll.
+ * @param {number} [timeoutMs=60000]  - Total wait time limit in milliseconds.
+ * @param {number} [intervalMs=1500]  - Poll interval in milliseconds.
+ * @returns {Promise<void>}
+ *
+ * @example
+ * await waitForContainerRunning('rehoster-my-app', 30000);
+ */
+async function waitForContainerRunning(containerName, timeoutMs = 60000, intervalMs = 1500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const status = await getContainerStatus(containerName);
+    if (status === 'running') return;
+    if (status === 'stopped' || status === 'exited') {
+      throw new Error(`Container "${containerName}" exited unexpectedly while waiting for it to start.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(`Timed out waiting for container "${containerName}" to start (${timeoutMs}ms).`);
+}
+
+/**
+ * Build a Dockerfile for a pure Python application.
+ *
+ * The generated Dockerfile:
+ *  - Uses python:3.11-slim as the base image.
+ *  - Creates a non-root user `appuser` for security.
+ *  - Detects and installs dependencies from requirements.txt, pyproject.toml,
+ *    or Pipfile inside a virtual environment at /opt/venv.
+ *  - Uses `gunicorn` with uvicorn workers for ASGI (FastAPI/Starlette) or the
+ *    standard gunicorn worker for Django/Flask when no explicit start command
+ *    is provided.
+ *
+ * @param {{ appPath: string, startCommand?: string, containerPort?: number }} params
+ * @returns {string}
+ */
+function buildPythonDockerfile({ appPath, startCommand, containerPort = 8000 }) {
+  const manifests = analyzeDependencyManifests(appPath);
+
+  // Dependency install command for the virtual environment.
+  let pipInstallLine = '';
+  if (manifests.hasRequirementsTxt) {
+    pipInstallLine = 'RUN /opt/venv/bin/pip install --no-cache-dir -r requirements.txt';
+  } else if (manifests.hasPyproject) {
+    pipInstallLine = [
+      'RUN /opt/venv/bin/pip install --no-cache-dir pip setuptools wheel',
+      'RUN if [ -f poetry.lock ]; then \\',
+      '      /opt/venv/bin/pip install --no-cache-dir poetry && \\',
+      '      /opt/venv/bin/poetry config virtualenvs.create false && \\',
+      '      /opt/venv/bin/poetry install --no-interaction --no-ansi --only main; \\',
+      '    else \\',
+      '      /opt/venv/bin/pip install --no-cache-dir .; \\',
+      '    fi',
+    ].join('\n');
+  } else if (manifests.hasPipfile) {
+    pipInstallLine = [
+      'RUN /opt/venv/bin/pip install --no-cache-dir pipenv',
+      'RUN PIPENV_VENV_IN_PROJECT=0 /opt/venv/bin/pipenv install --system --deploy',
+    ].join('\n');
+  } else {
+    pipInstallLine = '# No Python dependency manifest found — add requirements.txt or pyproject.toml';
+  }
+
+  // Default start command — prefer user-supplied value, otherwise use gunicorn.
+  const resolvedStartCommand = startCommand && startCommand.trim().length > 0
+    ? startCommand
+    : 'gunicorn app:app --bind 0.0.0.0:${PORT:-' + containerPort + '} --workers 2 --timeout 120';
+
+  return `${GENERATED_DOCKERFILE_MARKER}
+FROM python:3.11-slim AS base
+
+# Create a dedicated non-root user to run the application.
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+WORKDIR /app
+
+# Install system dependencies that are commonly required by Python packages.
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    gcc g++ libpq-dev libffi-dev curl git \\
+  && rm -rf /var/lib/apt/lists/*
+
+# Create a virtual environment so we never touch the system Python.
+RUN python -m venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Copy dependency manifests first for better Docker layer caching.
+COPY --chown=appuser:appuser requirements*.txt pyproject.toml poetry.lock Pipfile Pipfile.lock setup.py setup.cfg ./
+
+# Install Python dependencies.
+${pipInstallLine}
+
+# Ensure gunicorn is available for the default start command.
+RUN /opt/venv/bin/pip install --no-cache-dir gunicorn uvicorn[standard] || true
+
+# Copy the rest of the application code.
+COPY --chown=appuser:appuser . .
+
+RUN mkdir -p /app/output /app/cache && chown -R appuser:appuser /app /opt/venv
+
+ENV PORT=${containerPort}
+EXPOSE ${containerPort}
+USER appuser
+
+CMD ["sh", "-c", ${JSON.stringify(resolvedStartCommand)}]
+`;
+}
+
 module.exports = {
   isDockerAvailable,
   attemptDockerAutoRepair,
@@ -656,4 +799,6 @@ module.exports = {
   getContainerStatus,
   generateDockerfile,
   removeImage,
+  waitForContainerRunning,
+  buildPythonDockerfile,
 };

@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS apps (
   tags TEXT,
   webhook_url TEXT,
   restart_schedule TEXT,
+  post_start_command TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_deployed_at DATETIME,
