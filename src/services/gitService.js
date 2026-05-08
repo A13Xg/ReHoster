@@ -135,7 +135,7 @@ async function fetchLatest(targetPath, branch) {
 }
 
 /**
- * Check whether the local repository has behind the remote.
+ * Check whether the local repository is behind the remote.
  *
  * Performs a fetch, then compares HEAD against origin/<branch>.
  * Returns a result object that describes the current revision state.
