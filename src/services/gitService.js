@@ -125,7 +125,7 @@ async function fetchLatest(targetPath, branch) {
       return;
     } catch (err) {
       lastErr = err;
-      const isNetworkError = isTransientGitError(err.message);
+      const isNetworkError = isTransientGitError(String(err && (err.message || err)));
       if (!isNetworkError || attempt > MAX_RETRIES) break;
       await sleep(RETRY_DELAY_MS * attempt);
     }
@@ -245,7 +245,7 @@ async function pullLatest(targetPath, branch, options = {}) {
           lastErr = fallbackErr;
         }
       }
-      const isNetworkError = isTransientGitError(err.message);
+      const isNetworkError = isTransientGitError(String(err && (err.message || err)));
       if (!isNetworkError || attempt > MAX_RETRIES) break;
       await sleep(RETRY_DELAY_MS * attempt);
     }
@@ -332,6 +332,10 @@ async function getLatestCommitInfo(targetPath) {
  * connectivity problem (e.g. DNS failure, connection reset, timeout).
  * These errors are candidates for automatic retry.
  *
+ * Note: 404 "repository not found" is **not** treated as transient — that
+ * typically indicates a permanent misconfiguration (wrong URL, deleted repo,
+ * or missing permissions).
+ *
  * @param {string} message - Error message string.
  * @returns {boolean}
  */
@@ -344,8 +348,7 @@ function isTransientGitError(message) {
     || text.includes('temporary failure in name resolution')
     || text.includes('network is unreachable')
     || text.includes('tls handshake timeout')
-    || text.includes('the remote end hung up')
-    || text.includes('repository not found'); // treat 404 as transient for retry
+    || text.includes('the remote end hung up');
 }
 
 module.exports = {

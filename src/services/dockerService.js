@@ -701,6 +701,9 @@ async function waitForContainerRunning(containerName, timeoutMs = 60000, interva
  *  - Creates a non-root user `appuser` for security.
  *  - Detects and installs dependencies from requirements.txt, pyproject.toml,
  *    or Pipfile inside a virtual environment at /opt/venv.
+ *  - Auto-detects the WSGI/ASGI entry point:
+ *      - Django:  `<module>.wsgi:application` from `manage.py`
+ *      - Flask/FastAPI/other: falls back to `app:app`
  *  - Uses `gunicorn` with uvicorn workers for ASGI (FastAPI/Starlette) or the
  *    standard gunicorn worker for Django/Flask when no explicit start command
  *    is provided.
@@ -735,10 +738,34 @@ function buildPythonDockerfile({ appPath, startCommand, containerPort = 8000 }) 
     pipInstallLine = '# No Python dependency manifest found — add requirements.txt or pyproject.toml';
   }
 
+  // Detect the WSGI/ASGI app entry point heuristically.
+  // Django projects have a manage.py that contains the settings module name.
+  let wsgiModule = 'app:app';
+  try {
+    const managePy = require('path').join(appPath, 'manage.py');
+    const fs2 = require('fs');
+    if (fs2.existsSync(managePy)) {
+      const content = fs2.readFileSync(managePy, 'utf8');
+      // Django manage.py typically contains: os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mysite.settings')
+      const match = content.match(/['"]([\w.]+\.settings)['"]/);
+      if (match) {
+        const settingsModule = match[1];
+        // The project package is the part before '.settings'
+        const djangoPackage = settingsModule.replace(/\.settings.*$/, '');
+        wsgiModule = `${djangoPackage}.wsgi:application`;
+      } else {
+        // Generic Django fallback
+        wsgiModule = 'wsgi:application';
+      }
+    }
+  } catch {
+    // Best effort — fall back to app:app
+  }
+
   // Default start command — prefer user-supplied value, otherwise use gunicorn.
   const resolvedStartCommand = startCommand && startCommand.trim().length > 0
     ? startCommand
-    : 'gunicorn app:app --bind 0.0.0.0:${PORT:-' + containerPort + '} --workers 2 --timeout 120';
+    : `gunicorn ${wsgiModule} --bind 0.0.0.0:\${PORT:-${containerPort}} --workers 2 --timeout 120`;
 
   return `${GENERATED_DOCKERFILE_MARKER}
 FROM python:3.11-slim AS base

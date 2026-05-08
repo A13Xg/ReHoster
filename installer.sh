@@ -191,17 +191,19 @@ heading "Step 3/6 — Configuring environment"
 if [[ ! -f ".env" ]]; then
     step "Generating .env from template..."
     if [[ -f ".env.example" ]]; then
-        GEN_SECRET=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))" 2>/dev/null \
-            || echo "please-replace-with-a-long-random-secret")
-        sed "s|replace-this-with-a-long-random-secret|${GEN_SECRET}|" .env.example > .env
-        info ".env created with a random SESSION_SECRET"
-        echo ""
-        echo -e "  ${C_YELLOW}*** ACTION REQUIRED ***${C_RESET}"
-        echo -e "  Edit ${INSTALL_DIR}/.env and set a secure ADMIN_PASSWORD before first use."
-        echo ""
-        read -rp "  Press Enter to continue..." _
+      GEN_SECRET=$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))" 2>/dev/null || "")
+      if [[ -z "$GEN_SECRET" ]]; then
+        error "Failed to generate SESSION_SECRET — Node.js crypto unavailable. Generate one manually with: openssl rand -hex 32"
+      fi
+      sed "s|replace-this-with-a-long-random-secret|${GEN_SECRET}|" .env.example > .env
+      info ".env created with a randomly generated SESSION_SECRET"
+      echo ""
+      echo -e "  ${C_YELLOW}*** ACTION REQUIRED ***${C_RESET}"
+      echo -e "  Edit ${INSTALL_DIR}/.env and set a secure ADMIN_PASSWORD before first use."
+      echo ""
+      read -rp "  Press Enter to continue..." _
     else
-        warn ".env.example not found — cannot create .env automatically. Copy it manually."
+      warn ".env.example not found — cannot create .env automatically. Copy it manually."
     fi
 else
     info ".env already exists — skipping"

@@ -85,11 +85,15 @@
 
   <div class="actions-list" style="padding:1rem;">
     <form action="/admin/upgrade/check" method="POST" style="margin-bottom:0.5rem;">
-      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+      <% if (typeof csrfToken !== 'undefined' && csrfToken) { %>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <% } %>
       <button type="submit" class="btn btn-secondary btn-block">🔍 Check for Updates</button>
     </form>
     <form action="/admin/upgrade/apply" method="POST">
-      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>" />
+      <% if (typeof csrfToken !== 'undefined' && csrfToken) { %>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <% } %>
       <button type="submit" class="btn btn-primary btn-block confirm-action" data-confirm="Apply upgrade? This will run git pull and npm install. The server will need to be restarted after.">⬆ Apply Upgrade (git pull)</button>
     </form>
   </div>

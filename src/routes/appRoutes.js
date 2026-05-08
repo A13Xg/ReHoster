@@ -497,10 +497,14 @@ router.post(
       if (!app || !app.local_path) return res.status(404).json({ error: 'Not found' });
 
       const rawName = req.headers['x-file-name'];
-      const newName = sanitizeNewName(rawName);
+      // HTTP headers can theoretically arrive as an array (multi-value) — take the first.
+      const headerName = Array.isArray(rawName) ? rawName[0] : rawName;
+      const newName = sanitizeNewName(headerName);
       if (!newName) return res.status(400).json({ error: 'Valid X-File-Name header required' });
 
-      const rawDir = normalizeRelPath(req.headers['x-file-path'] || '');
+      const rawDirHeader = req.headers['x-file-path'];
+      const headerDir = Array.isArray(rawDirHeader) ? rawDirHeader[0] : (rawDirHeader || '');
+      const rawDir = normalizeRelPath(headerDir);
       const targetRelPath = rawDir ? `${rawDir}/${newName}` : newName;
 
       let targetPath;
