@@ -52,7 +52,7 @@
           Service Type
           <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="auto: detect automatically; static: serve with nginx; node: Node.js app" aria-label="Service Type field documentation">ℹ️</a>
         </label>
-        <select class="form-input" id="service_type" name="service_type">
+        <select class="form-input" id="service_type" name="service_type" onchange="(function(select){ var startCommand = document.getElementById('startCommand'); if (!startCommand) return; if (select.value === 'python') { if (startCommand.value === 'npm start') startCommand.value = ''; startCommand.placeholder = 'gunicorn app:app'; } else { if (!startCommand.value) startCommand.value = 'npm start'; startCommand.placeholder = 'npm start'; } })(this)">
           <option value="auto">Auto-detect</option>
           <option value="node">Node.js</option>
           <option value="python">Python</option>
