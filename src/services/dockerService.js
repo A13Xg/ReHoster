@@ -773,8 +773,11 @@ function buildPythonDockerfile({ appPath, startCommand, containerPort = 8000 }) 
   // the build to fail immediately.
   const manifestFiles = [];
   if (manifests.hasRequirementsTxt) {
-    // Use a glob so requirements-dev.txt and similar are also captured.
-    manifestFiles.push('requirements*.txt');
+    // Include both the standard file and the common dev-extras variant.
+    // Using a glob here would risk capturing backup/renamed copies; be explicit.
+    manifestFiles.push('requirements.txt');
+    if (fs.existsSync(path.join(appPath, 'requirements-dev.txt'))) manifestFiles.push('requirements-dev.txt');
+    if (fs.existsSync(path.join(appPath, 'requirements-prod.txt'))) manifestFiles.push('requirements-prod.txt');
   }
   if (manifests.hasPyproject) {
     manifestFiles.push('pyproject.toml');

@@ -668,7 +668,8 @@ async function deployApp(appId) {
           log('info', `Running post-start command: ${postStartCmd}`);
           // Use the same resolved Docker binary as the rest of the service so
           // installations that override DOCKER_CMD work correctly for exec too.
-          const dockerCmd = dockerService.getDockerCommandInfo().command;
+          const dockerCmdInfo = dockerService.getDockerCommandInfo();
+          const dockerCmd = (dockerCmdInfo && dockerCmdInfo.command) || 'docker';
           const result = await runCommand(
             dockerCmd,
             ['exec', app.container_name, 'sh', '-c', postStartCmd],
