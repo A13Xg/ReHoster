@@ -767,6 +767,32 @@ function buildPythonDockerfile({ appPath, startCommand, containerPort = 8000 }) 
     ? startCommand
     : `gunicorn ${wsgiModule} --bind 0.0.0.0:\${PORT:-${containerPort}} --workers 2 --timeout 120`;
 
+  // Build a COPY command that only references manifest files that actually exist
+  // in the app directory.  Docker requires every explicitly named source to be
+  // present in the build context, so listing a file that does not exist causes
+  // the build to fail immediately.
+  const manifestFiles = [];
+  if (manifests.hasRequirementsTxt) {
+    // Use a glob so requirements-dev.txt and similar are also captured.
+    manifestFiles.push('requirements*.txt');
+  }
+  if (manifests.hasPyproject) {
+    manifestFiles.push('pyproject.toml');
+    if (fs.existsSync(path.join(appPath, 'poetry.lock'))) manifestFiles.push('poetry.lock');
+    if (fs.existsSync(path.join(appPath, 'setup.py'))) manifestFiles.push('setup.py');
+    if (fs.existsSync(path.join(appPath, 'setup.cfg'))) manifestFiles.push('setup.cfg');
+  }
+  if (manifests.hasPipfile) {
+    manifestFiles.push('Pipfile');
+    if (fs.existsSync(path.join(appPath, 'Pipfile.lock'))) manifestFiles.push('Pipfile.lock');
+  }
+
+  // If no recognised manifest was found, fall back to copying everything and
+  // letting pip/gunicorn handle the rest.
+  const manifestCopyLine = manifestFiles.length > 0
+    ? `COPY --chown=appuser:appuser ${manifestFiles.join(' ')} ./`
+    : '# No Python dependency manifest detected — copying full context below';
+
   return `${GENERATED_DOCKERFILE_MARKER}
 FROM python:3.11-slim AS base
 
@@ -787,8 +813,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Copy dependency manifests first for better Docker layer caching.
-COPY --chown=appuser:appuser requirements*.txt pyproject.toml poetry.lock Pipfile Pipfile.lock setup.py setup.cfg ./
+# Copy only the dependency manifest files that actually exist so the COPY
+# instruction does not fail when optional files (e.g. poetry.lock) are absent.
+${manifestCopyLine}
 
 # Install Python dependencies.
 ${pipInstallLine}

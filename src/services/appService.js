@@ -8,6 +8,7 @@ const db = require('../config/db');
 const config = require('../config/env');
 const { sanitizeAppName, validateAppInput, isValidRepoUrl } = require('../utils/validation');
 const { getAppDir, ensureDir } = require('../utils/paths');
+const { runCommand } = require('../utils/shell');
 const portService = require('./portService');
 const gitService = require('./gitService');
 const dockerService = require('./dockerService');
@@ -665,9 +666,11 @@ async function deployApp(appId) {
           // Wait up to 30 s for the container to be healthy/ready before running the command.
           await dockerService.waitForContainerRunning(app.container_name, 30000);
           log('info', `Running post-start command: ${postStartCmd}`);
-          const { runCommand } = require('../utils/shell');
+          // Use the same resolved Docker binary as the rest of the service so
+          // installations that override DOCKER_CMD work correctly for exec too.
+          const dockerCmd = dockerService.getDockerCommandInfo().command;
           const result = await runCommand(
-            'docker',
+            dockerCmd,
             ['exec', app.container_name, 'sh', '-c', postStartCmd],
             { timeout: 60000 }
           );

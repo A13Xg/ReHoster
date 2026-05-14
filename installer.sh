@@ -173,8 +173,9 @@ else
 
     step "Copying files to ${INSTALL_DIR}..."
     mkdir -p "$INSTALL_DIR"
-    # Copy all files except the data, logs, and node_modules directories (fresh install).
-    rsync -a --exclude 'data/' --exclude 'logs/' --exclude 'node_modules/' --exclude '.git/' \
+    # Copy all project files. Exclude only runtime-generated directories so that
+    # the installed copy remains a valid git checkout and can use the Upgrade page.
+    rsync -a --exclude 'data/' --exclude 'logs/' --exclude 'node_modules/' \
         "${SCRIPT_DIR}/" "${INSTALL_DIR}/" 2>/dev/null \
         || cp -r "${SCRIPT_DIR}/." "${INSTALL_DIR}"
 

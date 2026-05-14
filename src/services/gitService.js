@@ -137,22 +137,39 @@ async function fetchLatest(targetPath, branch) {
 /**
  * Check whether the local repository is behind the remote.
  *
- * Performs a fetch, then compares HEAD against origin/<branch>.
- * Returns a result object that describes the current revision state.
+ * Performs a fetch, then uses `git rev-list --count HEAD..origin/<branch>` to
+ * count commits that exist on the remote but not locally.  This means a local
+ * branch that is *ahead* of the remote (e.g. after using the file browser to
+ * make local changes) does not falsely report updates available.
  *
  * @param {string} targetPath - Absolute path to the local repository.
  * @param {string} branch     - Branch to compare against.
- * @returns {Promise<{ changed: boolean, local: string, remote: string }>}
+ * @returns {Promise<{ changed: boolean, local: string, remote: string, behindCount: number }>}
  *
  * @example
  * const state = await hasRemoteChanges('/managed-apps/my-app', 'main');
- * if (state.changed) console.log('Updates available');
+ * if (state.changed) console.log(`${state.behindCount} new commit(s) available`);
  */
 async function hasRemoteChanges(targetPath, branch) {
   await fetchLatest(targetPath, branch);
   const local = await getRevision(targetPath, 'HEAD');
   const remote = await getRevision(targetPath, `origin/${branch}`);
-  return { changed: local !== remote, local, remote };
+
+  // Count commits that are in origin/<branch> but NOT in HEAD.
+  // This is zero when the local branch is up-to-date or ahead of the remote,
+  // and positive only when there are remote commits not yet pulled.
+  const git = simpleGit(targetPath);
+  let behindCount = 0;
+  try {
+    const raw = await git.raw(['rev-list', '--count', `HEAD..origin/${branch}`]);
+    behindCount = parseInt(raw.trim(), 10) || 0;
+  } catch {
+    // Fall back to SHA comparison if rev-list fails (e.g. brand-new repo with
+    // no common history).
+    behindCount = local !== remote ? 1 : 0;
+  }
+
+  return { changed: behindCount > 0, local, remote, behindCount };
 }
 
 /**
