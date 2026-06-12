@@ -1,5 +1,5 @@
 node_modules
-npm-debug.log
+npm-debug.log*
 .git
 .gitignore
 .env
@@ -7,5 +7,7 @@ npm-debug.log
 data
 logs
 managed-apps
+coverage
+*.sqlite
 Dockerfile*
 docker-compose*.yml

@@ -2,9 +2,12 @@ version: '3.8'
 
 services:
   hosting-panel:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: rehoster-panel
     restart: unless-stopped
+    init: true
     ports:
       - "3000:3000"
     volumes:
@@ -17,7 +20,11 @@ services:
       - ./logs:/app/logs
       - ./.env:/app/.env:ro
     environment:
-      - NODE_ENV=production
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_PATH: /app/data/hosting-panel.sqlite
+      MANAGED_APPS_DIR: /app/managed-apps
+    command: ["sh", "-lc", "node src/db/init.js && node src/server.js"]
     networks:
       - rehoster-net
 
