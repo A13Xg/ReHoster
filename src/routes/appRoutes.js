@@ -483,6 +483,53 @@ router.post('/admin/apps/:id/files/paste', express.json(), (req, res, next) => {
   }
 });
 
+// Upload a file into the app's directory.
+// The client sends a raw binary body with:
+//   Content-Type: application/octet-stream
+//   X-File-Name: <filename> (used to determine where to write)
+//   X-File-Path: <relative directory path> (destination folder, optional)
+router.post(
+  '/admin/apps/:id/files/upload',
+  express.raw({ type: 'application/octet-stream', limit: '100mb' }),
+  (req, res, next) => {
+    try {
+      const app = appService.getApp(Number(req.params.id));
+      if (!app || !app.local_path) return res.status(404).json({ error: 'Not found' });
+
+      const rawName = req.headers['x-file-name'];
+      // HTTP headers can theoretically arrive as an array (multi-value) — take the first.
+      const headerName = Array.isArray(rawName) ? rawName[0] : rawName;
+      const newName = sanitizeNewName(headerName);
+      if (!newName) return res.status(400).json({ error: 'Valid X-File-Name header required' });
+
+      const rawDirHeader = req.headers['x-file-path'];
+      const headerDir = Array.isArray(rawDirHeader) ? rawDirHeader[0] : (rawDirHeader || '');
+      const rawDir = normalizeRelPath(headerDir);
+      const targetRelPath = rawDir ? `${rawDir}/${newName}` : newName;
+
+      let targetPath;
+      try {
+        targetPath = rawDir ? safeJoin(app.local_path, `${rawDir}/${newName}`) : safeJoin(app.local_path, newName);
+      } catch {
+        return res.status(400).json({ error: 'Invalid path' });
+      }
+
+      const targetDir = path.dirname(targetPath);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      // req.body is a Buffer when express.raw() processes the request.
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      fs.writeFileSync(targetPath, body);
+
+      return res.json({ ok: true, path: targetRelPath, size: body.length });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 router.delete('/admin/apps/:id', async (req, res, next) => {
   try {
     await appService.deleteApp(Number(req.params.id));

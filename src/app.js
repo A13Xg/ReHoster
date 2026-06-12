@@ -88,7 +88,10 @@ function csrfMiddleware(req, res, next) {
   res.locals.csrfToken = generateCsrfToken(req);
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     if (!CSRF_SKIP_PATHS.has(req.path)) {
-      const token = req.body._csrf || req.headers['x-csrf-token'] || req.headers['csrf-token'];
+      // req.body may be undefined for content types not handled by the global body
+      // parsers (e.g. application/octet-stream for binary uploads). Guard before
+      // property access so those requests fall through to the header-based check.
+      const token = (req.body && req.body._csrf) || req.headers['x-csrf-token'] || req.headers['csrf-token'];
       if (!token || token !== req.session.csrfToken) {
         const err = new Error('Invalid CSRF token');
         err.status = 403;

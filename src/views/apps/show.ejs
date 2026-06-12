@@ -143,6 +143,12 @@
         <span class="detail-label">Start Command</span>
         <span class="detail-value"><code><%= app.start_command || '—' %></code></span>
       </div>
+      <% if (app.post_start_command) { %>
+      <div class="detail-row">
+        <span class="detail-label">Post-Start Cmd</span>
+        <span class="detail-value"><code><%= app.post_start_command %></code></span>
+      </div>
+      <% } %>
       <% if (app.cpu_limit) { %>
       <div class="detail-row">
         <span class="detail-label">CPU Limit</span>
@@ -265,6 +271,15 @@
       <div class="form-group">
         <label class="form-label" for="startCommandEdit">Start Command</label>
         <input class="form-input" type="text" id="startCommandEdit" name="startCommand" value="<%= app.start_command || '' %>" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="postStartCommandEdit">
+          Post-Start Command
+          <span class="text-muted" style="font-weight:400;text-transform:none;">(optional)</span>
+        </label>
+        <input class="form-input" type="text" id="postStartCommandEdit" name="post_start_command" placeholder="python manage.py migrate" value="<%= app.post_start_command || '' %>" />
+        <small class="form-hint" style="font-size:0.78rem;color:var(--text-muted);">Runs inside the container after startup (max 30 s wait). Use for migrations, seed scripts, etc.</small>
       </div>
 
       <div class="form-group">

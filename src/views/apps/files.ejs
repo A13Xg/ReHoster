@@ -1,5 +1,8 @@
 <%- include('../partials/header', {title: title}) %>
 
+<!-- Hidden file input for upload -->
+<input type="file" id="uploadFileInput" multiple style="display:none;" onchange="handleFileUploadChange(event)" />
+
 <div class="page-header">
   <div>
     <h1 class="page-title">📁 Files — <%= app.name %></h1>
@@ -10,6 +13,7 @@
   <div class="header-actions">
     <button class="btn btn-secondary" onclick="createEntry('file')">+ New File</button>
     <button class="btn btn-secondary" onclick="createEntry('folder')">+ New Folder</button>
+    <button class="btn btn-secondary" onclick="document.getElementById('uploadFileInput').click()" title="Upload files to the current directory">⬆ Upload</button>
     <button id="pasteButton" class="btn btn-secondary" onclick="pasteIntoCurrent()" disabled>Paste</button>
     <a href="/admin/apps/<%= app.id %>" class="btn btn-secondary">← Back to App</a>
   </div>
@@ -392,6 +396,60 @@ function createEntry(type) {
 
 function downloadEntry(encodedPath) {
   window.location.href = '/admin/apps/' + appId + '/files/download?path=' + encodedPath;
+}
+
+/**
+ * Upload one or more files to the current directory.
+ * Files are sent as raw binary requests (application/octet-stream).
+ * The destination directory is passed via the X-File-Path header.
+ */
+function handleFileUploadChange(event) {
+  var files = event.target.files;
+  if (!files || files.length === 0) return;
+
+  var uploadQueue = Array.from(files);
+  var successCount = 0;
+  var failMessages = [];
+
+  function uploadNext() {
+    if (uploadQueue.length === 0) {
+      if (failMessages.length > 0) {
+        alert('Upload completed with errors:\n' + failMessages.join('\n'));
+      }
+      window.location.reload();
+      return;
+    }
+
+    var file = uploadQueue.shift();
+    fetch('/admin/apps/' + appId + '/files/upload', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-File-Name': file.name,
+        'X-File-Path': currentRelPath || '',
+        'X-CSRF-Token': getCsrfToken(),
+      },
+      body: file,
+    })
+      .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+      .then(function(result) {
+        if (result.ok) {
+          successCount += 1;
+        } else {
+          failMessages.push(file.name + ': ' + (result.data.error || 'Unknown error'));
+        }
+        uploadNext();
+      })
+      .catch(function(err) {
+        failMessages.push(file.name + ': ' + (err.message || 'Network error'));
+        uploadNext();
+      });
+  }
+
+  uploadNext();
+  // Reset the input so the same file can be uploaded again if needed.
+  event.target.value = '';
 }
 
 document.addEventListener('click', function() {

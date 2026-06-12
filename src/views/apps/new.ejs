@@ -52,9 +52,10 @@
           Service Type
           <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="auto: detect automatically; static: serve with nginx; node: Node.js app" aria-label="Service Type field documentation">ℹ️</a>
         </label>
-        <select class="form-input" id="service_type" name="service_type">
+        <select class="form-input" id="service_type" name="service_type" onchange="(function(select){ var startCommand = document.getElementById('startCommand'); if (!startCommand) return; if (select.value === 'python') { if (startCommand.value === 'npm start') startCommand.value = ''; startCommand.placeholder = 'gunicorn app:app'; } else { if (!startCommand.value) startCommand.value = 'npm start'; startCommand.placeholder = 'npm start'; } })(this)">
           <option value="auto">Auto-detect</option>
           <option value="node">Node.js</option>
+          <option value="python">Python</option>
           <option value="static">Static / HTML</option>
         </select>
       </div>
@@ -73,6 +74,16 @@
           <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Command to start your app" aria-label="Start Command field documentation">ℹ️</a>
         </label>
         <input class="form-input" type="text" id="startCommand" name="startCommand" placeholder="npm start" value="npm start" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="post_start_command">
+          Post-Start Command
+          <span class="text-muted" style="font-weight:400;text-transform:none;">(optional)</span>
+          <a href="https://github.com/A13Xg/ReHoster/wiki" target="_blank" rel="noopener noreferrer" class="tooltip-icon" title="Shell command to run inside the container after it is confirmed running (e.g. database migrations)" aria-label="Post-Start Command field documentation">ℹ️</a>
+        </label>
+        <input class="form-input" type="text" id="post_start_command" name="post_start_command" placeholder="python manage.py migrate" value="<%= typeof formData !== 'undefined' && formData.post_start_command ? formData.post_start_command : '' %>" />
+        <small class="form-hint">Runs inside the container after it fully starts (up to 30 s wait). Useful for database migrations or seed scripts.</small>
       </div>
 
       <div class="form-group">
