@@ -22,8 +22,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_PATH: ./data/hosting-panel.sqlite
-      MANAGED_APPS_DIR: ./managed-apps
+      DATABASE_PATH: /app/data/hosting-panel.sqlite
+      MANAGED_APPS_DIR: /app/managed-apps
     command: ["sh", "-lc", "node src/db/init.js && node src/server.js"]
     networks:
       - rehoster-net

@@ -9,3 +9,5 @@ logs
 managed-apps
 coverage
 *.sqlite
+Dockerfile*
+docker-compose*.yml
